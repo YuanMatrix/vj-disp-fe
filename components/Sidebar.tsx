@@ -21,11 +21,12 @@ export default function Sidebar() {
 
   return (
     <aside 
-      className="w-[170px] min-w-[170px] bg-[#080808] flex flex-col justify-between flex-shrink-0"
+      className="w-[170px] bg-[#080808] fixed left-0 flex flex-col justify-between"
       style={{ 
-        minHeight: 'calc(100vh - 80px)',
-        paddingTop: '94px',
-        paddingBottom: '94px',
+        top: '80px',
+        height: 'calc(100vh - 80px)',
+        paddingTop: '94.31px',
+        paddingBottom: '40.88px',
         paddingLeft: '35px',
       }}
     >
@@ -50,8 +51,13 @@ export default function Sidebar() {
             <div className="flex items-start gap-[14px]" style={{ marginBottom: index < steps.length - 1 ? '46px' : '0' }}>
               {/* 圆点 */}
               <div
-                className="w-[11px] h-[11px] rounded-full flex-shrink-0 mt-[6px]"
-                style={{ background: step.active ? '#F6339A' : '#575757' }}
+                className="rounded-full flex-shrink-0"
+                style={{ 
+                  width: '11.32px',
+                  height: '11.32px',
+                  marginTop: '6.34px',
+                  background: step.active ? '#F6339A' : '#575757',
+                }}
               />
               
               {/* 文字 */}

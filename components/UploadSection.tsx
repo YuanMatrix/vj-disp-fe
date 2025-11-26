@@ -12,7 +12,7 @@ export default function UploadSection() {
   ];
 
   return (
-    <div className="flex-1 flex flex-col min-h-[calc(100vh-80px)] px-8 lg:px-16 xl:px-20 py-16 overflow-x-hidden">
+    <div className="flex-1 flex flex-col min-h-[calc(100vh-80px)] overflow-x-hidden" style={{ padding: '142px 80px 80px 160px' }}>
       {/* 标题区域 */}
       <div className="mb-10 lg:mb-14">
         <h1

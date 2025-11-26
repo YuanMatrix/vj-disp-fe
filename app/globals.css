@@ -1,26 +1,46 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #080808;
+    --foreground: #ffffff;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* 自定义颜色 */
+    --color-purple-light: #DAB2FF;
+    --color-gray-text: #99A1AF;
+  
+    /* 渐变色 */
+    --gradient-primary: linear-gradient(90deg, #AD46FF 0%, #F6339A 100%);
+    --gradient-logo: linear-gradient(135deg, #AD46FF 0%, #F6339A 100%);
+    --gradient-avatar: linear-gradient(135deg, #00B8DB 0%, #2B7FFF 100%);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Source Han Sans CN', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow-x: hidden;
+  }
+  
+  html,
+  body {
+    height: 100%;
+    width: 100%;
+  }
+  
+  /* 隐藏左下角的悬浮按钮（浏览器通知/扩展等） */
+  [style*="position: fixed"][style*="bottom: 0"],
+  [style*="position: fixed"][style*="bottom:0"],
+  [style*="position:fixed"][style*="bottom"],
+  div[style*="z-index"][style*="position"][style*="bottom"][style*="left"] {
+    display: none !important;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { Upload } from 'lucide-react';
+import Image from 'next/image';
 import MusicPlayer from './MusicPlayer';
 
 export default function UploadSection() {
@@ -16,22 +16,32 @@ export default function UploadSection() {
       className="flex-1 flex flex-col overflow-x-hidden" 
       style={{ 
         marginLeft: '170px',
-        minHeight: 'calc(100vh - 80px)',
-        padding: '142px 80px 80px 99px',
+        width: 'calc(100vw - 170px)',
+        paddingTop: 'clamp(60px, 7.4vw, 142px)',
+        paddingBottom: 'clamp(40px, 4.2vw, 80px)',
+        paddingLeft: 'clamp(30px, 5.2vw, 99px)',
+        paddingRight: 'clamp(30px, 4.2vw, 80px)',
       }}
     >
       {/* 标题区域 */}
-      <div className="mb-10 lg:mb-14">
+      <div style={{ marginBottom: '99.69px' }}>
         <h1
-          className="text-white font-bold text-2xl lg:text-[32px] leading-tight lg:leading-[48px] mb-2"
-          style={{ fontFamily: 'Source Han Sans CN, sans-serif' }}
+          className="text-white font-bold"
+          style={{ 
+            fontFamily: 'Source Han Sans CN, sans-serif',
+            fontSize: '32px',
+            lineHeight: '48px',
+            marginBottom: '8.27px',
+          }}
         >
           选择您的音乐
         </h1>
         <p
-          className="font-medium text-lg lg:text-2xl leading-normal lg:leading-9"
+          className="font-medium"
           style={{ 
             fontFamily: 'Source Han Sans CN, sans-serif',
+            fontSize: '24px',
+            lineHeight: '36px',
             color: '#929292',
           }}
         >
@@ -53,14 +63,15 @@ export default function UploadSection() {
           
           {/* 按钮主体 */}
           <div
-            className="relative flex items-center justify-center gap-2 h-[80px] lg:h-[102px] rounded-3xl hover:scale-105 active:scale-95 transition-transform"
+            className="relative flex items-center justify-center gap-2 h-[60px] lg:h-[103px] rounded-3xl hover:scale-105 active:scale-95 transition-transform"
           >
-            {/* 图标背景 */}
-            <div 
-              className="flex items-center justify-center w-8 h-8 lg:w-9 lg:h-9 bg-white rounded-md"
-            >
-              <Upload className="w-4 h-4 lg:w-5 lg:h-5 text-gray-500" />
-            </div>
+            {/* 图标 */}
+            <Image 
+              src="/icons/music-icon.svg" 
+              alt="music" 
+              width={36.36}
+              height={36.36}
+            />
             
             {/* 文字 */}
             <span
@@ -75,32 +86,49 @@ export default function UploadSection() {
 
       {/* 示例音乐区域 */}
       <div className="flex-1">
-        {/* 小标题 */}
-        <div className="flex items-center gap-2 mb-5">
-          <h2
-            className="font-medium text-xl lg:text-2xl"
-            style={{ 
-              fontFamily: 'Source Han Sans CN, sans-serif',
-              color: '#DAB2FF',
-            }}
-          >
-            示例音乐
-          </h2>
-          
-          {/* DEMO标签 */}
+        {/* 小标题容器 */}
+        <div className="relative" style={{ width: '162.65px', height: '48.41px', marginBottom: '21.97px' }}>
+          {/* DEMO标签 - 在顶部 */}
           <div 
-            className="flex items-center justify-center px-3 py-1 rounded-full"
+            className="absolute flex items-center justify-center"
             style={{ 
+              width: '64.7px',
+              height: '24.78px',
+              left: '97.91px',
+              top: '0px',
               background: 'linear-gradient(90deg, #AD46FF 0%, #F6339A 100%)',
+              borderRadius: '24px',
             }}
           >
             <span
-              className="text-white font-bold text-sm lg:text-base"
-              style={{ fontFamily: 'Source Han Sans CN, sans-serif' }}
+              className="text-white font-bold"
+              style={{ 
+                fontFamily: 'Source Han Sans CN, sans-serif',
+                fontSize: '16px',
+                lineHeight: '20px',
+              }}
             >
               DEMO
             </span>
           </div>
+          
+          {/* 示例音乐文字 - 在下方 */}
+          <h2
+            className="absolute font-medium"
+            style={{ 
+              fontFamily: 'Source Han Sans CN, sans-serif',
+              fontSize: '24px',
+              lineHeight: '36px',
+              width: '96px',
+              height: '36px',
+              left: '0px',
+              top: '12.41px',
+              color: '#DAB2FF',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            示例音乐
+          </h2>
         </div>
 
         {/* 音乐列表 - 响应式网格 */}

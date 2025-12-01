@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Play, Pause } from 'lucide-react';
+import Image from 'next/image';
 
 interface Song {
   id: number;
@@ -41,13 +41,21 @@ export default function MusicPlayer({ song }: MusicPlayerProps) {
           {/* 播放/暂停按钮 */}
           <button
             onClick={() => setIsPlaying(!isPlaying)}
-            className="w-10 h-10 bg-white rounded-sm flex items-center justify-center hover:scale-110 transition-transform"
-            style={{ transform: 'rotate(90deg)' }}
           >
             {isPlaying ? (
-              <Pause className="w-5 h-5 text-black" style={{ transform: 'rotate(-90deg)' }} />
+              <Image 
+                src="/icons/plause.svg" 
+                alt="pause" 
+                width={20}
+                height={20}
+              />
             ) : (
-              <Play className="w-5 h-5 text-black" style={{ transform: 'rotate(-90deg)' }} />
+              <Image 
+                src="/icons/play.svg" 
+                alt="play" 
+                width={20}
+                height={20}
+              />
             )}
           </button>
 

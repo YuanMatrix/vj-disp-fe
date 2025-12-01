@@ -21,9 +21,17 @@ export default function MusicPlayer({ song }: MusicPlayerProps) {
   return (
     <div className="w-full max-w-[547px] h-[120px] bg-[#080808] rounded-xl p-[15px] flex items-center gap-4 relative">
       {/* 歌曲封面 */}
-      <div className="w-[90px] h-[90px] bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex-shrink-0 overflow-hidden">
-        {/* 占位符，实际项目中用真实图片 */}
-        <div className="w-full h-full bg-gradient-to-br from-purple-400 to-pink-400" />
+      <div className="w-[90px] h-[90px] bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex-shrink-0 overflow-hidden relative">
+        {song.cover && song.cover !== '/images/demo-cover.jpg' ? (
+          <Image 
+            src={song.cover} 
+            alt={song.title}
+            fill
+            className="object-cover"
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-purple-400 to-pink-400" />
+        )}
       </div>
 
       {/* 歌曲信息和播放控件 */}

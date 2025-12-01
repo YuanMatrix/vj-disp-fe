@@ -5,7 +5,7 @@ import MusicPlayer from './MusicPlayer';
 
 export default function UploadSection() {
   const demoSongs = [
-    { id: 1, title: '一步之遥', artist: '歌手...', cover: '/images/music1.svg' },
+    { id: 1, title: '一步之遥', artist: 'Thomas Newman', cover: '/images/music1.svg' },
     { id: 2, title: '歌曲名称...', artist: '歌手...', cover: '/images/demo-cover.jpg' },
     { id: 3, title: '歌曲名称...', artist: '歌手...', cover: '/images/demo-cover.jpg' },
     { id: 4, title: '歌曲名称...', artist: '歌手...', cover: '/images/demo-cover.jpg' },

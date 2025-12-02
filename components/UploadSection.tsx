@@ -5,7 +5,13 @@ import MusicPlayer from './MusicPlayer';
 
 export default function UploadSection() {
   const demoSongs = [
-    { id: 1, title: '一步之遥', artist: 'Thomas Newman', cover: '/images/music1.svg' },
+    { 
+      id: 1, 
+      title: '一步之遥', 
+      artist: 'Thomas Newman', 
+      cover: '/images/music1.svg',
+      audioUrl: '/music/song1.mp3' // 将音乐文件放在 public/music 文件夹下
+    },
     { id: 2, title: '歌曲名称...', artist: '歌手...', cover: '/images/demo-cover.jpg' },
     { id: 3, title: '歌曲名称...', artist: '歌手...', cover: '/images/demo-cover.jpg' },
     { id: 4, title: '歌曲名称...', artist: '歌手...', cover: '/images/demo-cover.jpg' },

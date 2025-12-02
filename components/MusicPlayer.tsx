@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
 
 interface Song {
@@ -8,6 +8,7 @@ interface Song {
   title: string;
   artist: string;
   cover: string;
+  audioUrl?: string; // 音频文件路径
 }
 
 interface MusicPlayerProps {
@@ -16,7 +17,58 @@ interface MusicPlayerProps {
 
 export default function MusicPlayer({ song }: MusicPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [progress] = useState(25);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(1); // 默认音量设置为 80%
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  // 设置音量
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, [volume]);
+
+  // 处理播放/暂停
+  useEffect(() => {
+    if (!audioRef.current || !song.audioUrl) return;
+
+    if (isPlaying) {
+      audioRef.current.play();
+    } else {
+      audioRef.current.pause();
+    }
+  }, [isPlaying, song.audioUrl]);
+
+  // 更新进度
+  const handleTimeUpdate = () => {
+    if (!audioRef.current) return;
+    const currentProgress = (audioRef.current.currentTime / audioRef.current.duration) * 100;
+    setProgress(currentProgress || 0);
+  };
+
+  // 加载音频元数据
+  const handleLoadedMetadata = () => {
+    if (!audioRef.current) return;
+    setDuration(audioRef.current.duration);
+  };
+
+  // 点击进度条跳转
+  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!audioRef.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const newProgress = (clickX / rect.width) * 100;
+    const newTime = (newProgress / 100) * audioRef.current.duration;
+    audioRef.current.currentTime = newTime;
+    setProgress(newProgress);
+  };
+
+  // 音频播放结束
+  const handleEnded = () => {
+    setIsPlaying(false);
+    setProgress(0);
+  };
 
   return (
     <div className="w-full max-w-[547px] h-[120px] bg-[#080808] rounded-xl p-[15px] flex items-center gap-4 relative">
@@ -68,7 +120,10 @@ export default function MusicPlayer({ song }: MusicPlayerProps) {
           </button>
 
           {/* 进度条容器 */}
-          <div className="relative flex-1">
+          <div 
+            className="relative flex-1 cursor-pointer"
+            onClick={handleProgressClick}
+          >
             {/* 进度条背景 */}
             <div className="w-full h-[10px] bg-[#766288] rounded-[20px]" />
             
@@ -94,6 +149,17 @@ export default function MusicPlayer({ song }: MusicPlayerProps) {
           {song.artist}
         </div>
       </div>
+
+      {/* 音频元素 */}
+      {song.audioUrl && (
+        <audio
+          ref={audioRef}
+          src={song.audioUrl}
+          onTimeUpdate={handleTimeUpdate}
+          onLoadedMetadata={handleLoadedMetadata}
+          onEnded={handleEnded}
+        />
+      )}
     </div>
   );
 }

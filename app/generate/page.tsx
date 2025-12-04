@@ -77,7 +77,7 @@ export default function GeneratePage() {
       
       {/* 主内容区域 - 使用flex布局 */}
       <div
-        className="flex flex-col"
+        className="flex flex-col items-center"
         style={{
           marginLeft: '170px',
           marginTop: '80px',
@@ -100,6 +100,8 @@ export default function GeneratePage() {
             lineHeight: '48px',
             color: '#FFFFFF',
             marginBottom: 'clamp(15px, 2vh, 30px)',
+            width: '100%',
+            maxWidth: '1238px',
           }}
         >
           {videoTitle}

@@ -10,6 +10,7 @@ interface Song {
   artist: string;
   cover: string;
   audioUrl?: string; // 音频文件路径
+  videoUrl?: string; // 视频文件路径
 }
 
 interface MusicPlayerProps {
@@ -26,7 +27,14 @@ export default function MusicPlayer({ song }: MusicPlayerProps) {
 
   // 处理双击封面跳转
   const handleCoverDoubleClick = () => {
-    router.push('/generate');
+    const params = new URLSearchParams();
+    if (song.videoUrl) {
+      params.set('video', song.videoUrl);
+    }
+    if (song.title) {
+      params.set('title', song.title);
+    }
+    router.push(`/generate?${params.toString()}`);
   };
 
   // 设置音量
@@ -83,7 +91,7 @@ export default function MusicPlayer({ song }: MusicPlayerProps) {
       <div 
         className="w-[90px] h-[90px] bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex-shrink-0 overflow-hidden relative cursor-pointer hover:opacity-80 transition-opacity"
         onDoubleClick={handleCoverDoubleClick}
-        title="双击进入画面生成"
+        title="双击进入画面展示"
       >
         {song.cover && song.cover !== '/images/demo-cover.jpg' ? (
           <Image 

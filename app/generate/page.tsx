@@ -1,12 +1,55 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 
 export default function GeneratePage() {
+  const searchParams = useSearchParams();
+  const videoUrl = searchParams.get('video') || '/videos/demo1.mp4';
+  const videoTitle = searchParams.get('title') || '画面展示';
+  
   const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState(27); // 示例进度 27%
+  const [progress, setProgress] = useState(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // 更新进度条
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handleTimeUpdate = () => {
+      const currentProgress = (video.currentTime / video.duration) * 100;
+      setProgress(currentProgress || 0);
+    };
+
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setProgress(0);
+    };
+
+    video.addEventListener('timeupdate', handleTimeUpdate);
+    video.addEventListener('ended', handleEnded);
+
+    return () => {
+      video.removeEventListener('timeupdate', handleTimeUpdate);
+      video.removeEventListener('ended', handleEnded);
+    };
+  }, []);
+
+  // 播放/暂停控制
+  const togglePlay = () => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (isPlaying) {
+      video.pause();
+    } else {
+      video.play();
+    }
+    setIsPlaying(!isPlaying);
+  };
 
   return (
     <div 
@@ -45,7 +88,7 @@ export default function GeneratePage() {
             marginBottom: 'clamp(40px, 6.85vh, 68.47px)',
           }}
         >
-          画面生成
+          {videoTitle}
         </h1>
 
         {/* 视频预览区域 */}
@@ -57,28 +100,43 @@ export default function GeneratePage() {
             marginBottom: 'clamp(15px, 2.05vh, 20.48px)',
           }}
         >
-          {/* 视频背景图 */}
+          {/* 视频播放器 */}
           <div
-            className="relative w-full h-full"
+            className="relative w-full h-full overflow-hidden"
             style={{
-              background: 'url(/images/hero-bg.png) center/cover',
               borderRadius: '12px 12px 0px 0px',
+              background: '#000',
             }}
           >
-            {/* 播放按钮 */}
-            <button
-              onClick={() => setIsPlaying(!isPlaying)}
-              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer hover:scale-110 transition-transform"
-            >
-              <img
-                src="/icons/play.svg"
-                alt="播放"
-                style={{
-                  width: 'clamp(80px, 6.88vw, 132px)',
-                  height: 'auto',
-                }}
+            <video
+              ref={videoRef}
+              src={videoUrl}
+              className="w-full h-full object-contain"
+              playsInline
+            />
+            {/* 播放按钮 - 未播放时显示 */}
+            {!isPlaying && (
+              <button
+                onClick={togglePlay}
+                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer hover:scale-110 transition-transform"
+              >
+                <img
+                  src="/icons/play.svg"
+                  alt="播放"
+                  style={{
+                    width: 'clamp(80px, 6.88vw, 132px)',
+                    height: 'auto',
+                  }}
+                />
+              </button>
+            )}
+            {/* 点击视频区域暂停 */}
+            {isPlaying && (
+              <div
+                className="absolute inset-0 cursor-pointer"
+                onClick={togglePlay}
               />
-            </button>
+            )}
           </div>
         </div>
 

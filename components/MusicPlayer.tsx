@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 
 interface Song {
@@ -19,8 +20,14 @@ export default function MusicPlayer({ song }: MusicPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1); // 默认音量设置为 80%
+  const [volume, setVolume] = useState(1); // 默认音量设置为 100%
   const audioRef = useRef<HTMLAudioElement>(null);
+  const router = useRouter();
+
+  // 处理双击封面跳转
+  const handleCoverDoubleClick = () => {
+    router.push('/generate');
+  };
 
   // 设置音量
   useEffect(() => {
@@ -73,7 +80,11 @@ export default function MusicPlayer({ song }: MusicPlayerProps) {
   return (
     <div className="w-full max-w-[547px] h-[120px] bg-[#080808] rounded-xl p-[15px] flex items-center gap-4 relative">
       {/* 歌曲封面 */}
-      <div className="w-[90px] h-[90px] bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex-shrink-0 overflow-hidden relative">
+      <div 
+        className="w-[90px] h-[90px] bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex-shrink-0 overflow-hidden relative cursor-pointer hover:opacity-80 transition-opacity"
+        onDoubleClick={handleCoverDoubleClick}
+        title="双击进入画面生成"
+      >
         {song.cover && song.cover !== '/images/demo-cover.jpg' ? (
           <Image 
             src={song.cover} 

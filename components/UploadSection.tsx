@@ -12,9 +12,9 @@ export default function UploadSection() {
       cover: '/images/music1.svg',
       audioUrl: '/music/song1.mp3' // 将音乐文件放在 public/music 文件夹下
     },
-    { id: 2, title: '歌曲名称...', artist: '歌手...', cover: '/images/demo-cover.jpg' },
-    { id: 3, title: '歌曲名称...', artist: '歌手...', cover: '/images/demo-cover.jpg' },
-    { id: 4, title: '歌曲名称...', artist: '歌手...', cover: '/images/demo-cover.jpg' },
+    { id: 2, title: 'demo2', artist: 'unknown', cover: '/images/demo-cover.jpg' , audioUrl: '/music/demo2.mp3' },
+    { id: 3, title: 'demo3', artist: 'unknown', cover: '/images/demo-cover.jpg' , audioUrl: '/music/demo3.mp3' },
+    { id: 4, title: 'demo4', artist: 'unknown', cover: '/images/demo-cover.jpg' , audioUrl: '/music/demo4.mp3' },
   ];
 
   return (

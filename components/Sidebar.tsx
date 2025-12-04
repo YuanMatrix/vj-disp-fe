@@ -1,22 +1,31 @@
 'use client';
 
 import { useState } from 'react';
+import { usePathname } from 'next/navigation';
 
 interface StepItem {
   title: string;
   subtitle: string;
-  active: boolean;
 }
 
 export default function Sidebar() {
   const [mode, setMode] = useState<'create' | 'display'>('create');
+  const pathname = usePathname();
+
+  // 根据路由判断当前步骤
+  const getCurrentStep = () => {
+    if (pathname === '/generate') return 4; // 画面展示（最后一步）
+    return 0; // 默认第一步（上传音乐）
+  };
+
+  const currentStep = getCurrentStep();
 
   const steps: StepItem[] = [
-    { title: '上传音乐', subtitle: '支持多曲风输入', active: true },
-    { title: '选择片段', subtitle: '选择播放部分', active: false },
-    { title: '输入描述', subtitle: '选择对应风格\n输入场景提示词', active: false },
-    { title: '画面生成', subtitle: '生成AI VJ画面', active: false },
-    { title: '画面展示', subtitle: '播放AI VJ画面', active: false },
+    { title: '上传音乐', subtitle: '支持多曲风输入' },
+    { title: '选择片段', subtitle: '选择播放部分' },
+    { title: '输入描述', subtitle: '选择对应风格\n输入场景提示词' },
+    { title: '画面生成', subtitle: '生成AI VJ画面' },
+    { title: '画面展示', subtitle: '播放AI VJ画面' },
   ];
 
   return (
@@ -32,58 +41,61 @@ export default function Sidebar() {
     >
       {/* 步骤列表 */}
       <div className="flex flex-col">
-        {steps.map((step, index) => (
-          <div key={index} className="relative">
-            {/* 连接线 - 在圆点下方 */}
-            {index < steps.length - 1 && (
-              <div
-                className="absolute w-[3px] rounded-[20px]"
-                style={{
-                  height: '70px',
-                  left: '4px',
-                  top: '24px',
-                  background: step.active ? '#F6339A' : '#575757',
-                }}
-              />
-            )}
-            
-            {/* 步骤内容 */}
-            <div className="flex items-start gap-[14px]" style={{ marginBottom: index < steps.length - 1 ? '46px' : '0' }}>
-              {/* 圆点 */}
-              <div
-                className="rounded-full flex-shrink-0"
-                style={{ 
-                  width: '11.32px',
-                  height: '11.32px',
-                  marginTop: '6.34px',
-                  background: step.active ? '#F6339A' : '#575757',
-                }}
-              />
+        {steps.map((step, index) => {
+          const isActive = index <= currentStep; // 当前步骤及之前的步骤都高亮
+          return (
+            <div key={index} className="relative">
+              {/* 连接线 - 在圆点下方 */}
+              {index < steps.length - 1 && (
+                <div
+                  className="absolute w-[3px] rounded-[20px]"
+                  style={{
+                    height: '70px',
+                    left: '4px',
+                    top: '24px',
+                    background: isActive ? '#F6339A' : '#575757',
+                  }}
+                />
+              )}
               
-              {/* 文字 */}
-              <div className="flex flex-col">
+              {/* 步骤内容 */}
+              <div className="flex items-start gap-[14px]" style={{ marginBottom: index < steps.length - 1 ? '46px' : '0' }}>
+                {/* 圆点 */}
                 <div
-                  className="font-bold text-base leading-6"
-                  style={{
-                    fontFamily: 'Source Han Sans CN, sans-serif',
-                    color: step.active ? '#FFFFFF' : '#575757',
+                  className="rounded-full flex-shrink-0"
+                  style={{ 
+                    width: '11.32px',
+                    height: '11.32px',
+                    marginTop: '6.34px',
+                    background: isActive ? '#F6339A' : '#575757',
                   }}
-                >
-                  {step.title}
-                </div>
-                <div
-                  className="text-xs leading-[18px] whitespace-pre-line mt-0.5"
-                  style={{
-                    fontFamily: 'Source Han Sans CN, sans-serif',
-                    color: step.active ? '#F6339A' : '#575757',
-                  }}
-                >
-                  {step.subtitle}
+                />
+                
+                {/* 文字 */}
+                <div className="flex flex-col">
+                  <div
+                    className="font-bold text-base leading-6"
+                    style={{
+                      fontFamily: 'Source Han Sans CN, sans-serif',
+                      color: isActive ? '#FFFFFF' : '#575757',
+                    }}
+                  >
+                    {step.title}
+                  </div>
+                  <div
+                    className="text-xs leading-[18px] whitespace-pre-line mt-0.5"
+                    style={{
+                      fontFamily: 'Source Han Sans CN, sans-serif',
+                      color: isActive ? '#F6339A' : '#575757',
+                    }}
+                  >
+                    {step.subtitle}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* 模式切换 */}

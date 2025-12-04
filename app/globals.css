@@ -36,7 +36,11 @@ body {
     height: 100%;
     width: 100%;
   }
-  
+
+    html {
+      /* 预留滚动条空间，避免页面切换时因滚动条出现/消失导致的布局偏移 */
+      scrollbar-gutter: stable;
+    }
   /* 隐藏左下角的悬浮按钮（浏览器通知/扩展等） */
   [style*="position: fixed"][style*="bottom: 0"],
   [style*="position: fixed"][style*="bottom:0"],

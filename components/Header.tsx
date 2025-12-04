@@ -1,7 +1,13 @@
+'use client';
+
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { Music2, Grid3x3, User } from 'lucide-react';
 
 export default function Header() {
+  const pathname = usePathname();
+  const isNotHome = pathname !== '/';
+  
   return (
     <header className="w-full h-20 bg-[#080808] fixed top-0 left-0 z-50">
       <div className="w-full h-full flex items-center justify-between max-w-[1920px] mx-auto" style={{ paddingLeft: '40px', paddingRight: '24px' }}>
@@ -26,6 +32,7 @@ export default function Header() {
             href="/studio" 
             icon={<Music2 className="w-[19px] h-5 text-current" />} 
             label="创作空间"
+            isActive={isNotHome}
           />
           <NavItem 
             href="/training" 
@@ -55,13 +62,18 @@ interface NavItemProps {
   href: string;
   icon: React.ReactNode;
   label: string;
+  isActive?: boolean;
 }
 
-function NavItem({ href, icon, label }: NavItemProps) {
+function NavItem({ href, icon, label, isActive = false }: NavItemProps) {
   return (
     <Link 
       href={href}
-      className="rounded-[10px] flex items-center text-[#99A1AF] hover:bg-[rgba(173,70,255,0.2)] hover:border hover:border-[rgba(173,70,255,0.3)] hover:text-[#DAB2FF] transition-all group whitespace-nowrap box-border"
+      className={`rounded-[10px] flex items-center transition-all group whitespace-nowrap box-border ${
+        isActive 
+          ? 'bg-[rgba(173,70,255,0.2)] border border-[rgba(173,70,255,0.3)] text-[#DAB2FF]' 
+          : 'text-[#99A1AF] hover:bg-[rgba(173,70,255,0.2)] hover:border hover:border-[rgba(173,70,255,0.3)] hover:text-[#DAB2FF]'
+      }`}
       style={{
         width: '125px',
         height: '36px',

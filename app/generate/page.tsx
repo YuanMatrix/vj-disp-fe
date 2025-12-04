@@ -12,6 +12,7 @@ export default function GeneratePage() {
   
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // 更新进度条
@@ -51,6 +52,18 @@ export default function GeneratePage() {
     setIsPlaying(!isPlaying);
   };
 
+  // ESC 键退出全屏
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFullscreen]);
+
   return (
     <div 
       className="relative w-screen h-screen overflow-hidden"
@@ -71,33 +84,34 @@ export default function GeneratePage() {
           width: 'calc(100vw - 170px)',
           height: 'calc(100vh - 80px)',
           overflow: 'hidden',
-          paddingTop: 'clamp(60px, 9.43vh, 94.31px)',
-          paddingLeft: 'clamp(80px, 8.07vw, 141.29px)',
-          paddingRight: 'clamp(80px, 7.74vw, 135.51px)',
-          paddingBottom: 'clamp(40px, 5vh, 50px)',
+          paddingTop: 'clamp(20px, 3vh, 40px)',
+          paddingLeft: 'clamp(40px, 5vw, 100px)',
+          paddingRight: 'clamp(40px, 5vw, 100px)',
+          paddingBottom: 'clamp(30px, 4vh, 50px)',
         }}
       >
         {/* 标题 */}
         <h1
+          className="shrink-0"
           style={{
             fontFamily: 'Source Han Sans CN, sans-serif',
             fontWeight: 700,
             fontSize: 'clamp(24px, 1.67vw, 32px)',
             lineHeight: '48px',
             color: '#FFFFFF',
-            marginBottom: 'clamp(40px, 6.85vh, 68.47px)',
+            marginBottom: 'clamp(15px, 2vh, 30px)',
           }}
         >
           {videoTitle}
         </h1>
 
-        {/* 视频预览区域 */}
+        {/* 视频预览区域 - 自适应剩余空间 */}
         <div
-          className="relative"
+          className="relative flex-1 min-h-0"
           style={{
-            width: 'min(70.77vw, 1238.51px)',
-            height: 'min(59.44vh, 594.43px)',
-            marginBottom: 'clamp(15px, 2.05vh, 20.48px)',
+            width: '100%',
+            maxWidth: '1238px',
+            marginBottom: 'clamp(10px, 1.5vh, 15px)',
           }}
         >
           {/* 视频播放器 */}
@@ -124,7 +138,7 @@ export default function GeneratePage() {
                   src="/icons/play.svg"
                   alt="播放"
                   style={{
-                    width: 'clamp(80px, 6.88vw, 132px)',
+                    width: 'clamp(60px, 5vw, 100px)',
                     height: 'auto',
                   }}
                 />
@@ -142,11 +156,12 @@ export default function GeneratePage() {
 
         {/* 进度条 */}
         <div
-          className="relative"
+          className="relative shrink-0"
           style={{
-            width: 'min(70.77vw, 1238.51px)',
-            height: 'clamp(15px, 2vh, 20px)',
-            marginBottom: 'clamp(30px, 4.97vh, 49.65px)',
+            width: '100%',
+            maxWidth: '1238px',
+            height: 'clamp(10px, 1.2vh, 14px)',
+            marginBottom: 'clamp(15px, 2vh, 25px)',
           }}
         >
           {/* 进度条背景 */}
@@ -172,8 +187,8 @@ export default function GeneratePage() {
         </div>
 
         {/* 切换展演模式按钮 */}
-        <div className="flex justify-end">
-          <button className="relative group">
+        <div className="flex justify-end shrink-0" style={{ width: '100%', maxWidth: '1238px' }}>
+          <button className="relative group" onClick={() => setIsFullscreen(true)}>
             {/* 按钮阴影层 */}
             <div
               className="absolute inset-0"
@@ -188,8 +203,8 @@ export default function GeneratePage() {
             <div
               className="relative flex items-center justify-center hover:scale-105 active:scale-95 transition-transform"
               style={{
-                width: 'clamp(200px, 13.08vw, 251.2px)',
-                height: 'clamp(45px, 5.79vh, 57.85px)',
+                width: 'clamp(150px, 12vw, 200px)',
+                height: 'clamp(40px, 5vh, 50px)',
                 borderRadius: '24px',
               }}
             >
@@ -197,7 +212,7 @@ export default function GeneratePage() {
                 style={{
                   fontFamily: 'Source Han Sans CN, sans-serif',
                   fontWeight: 700,
-                  fontSize: 'clamp(20px, 1.67vw, 32px)',
+                  fontSize: 'clamp(16px, 1.4vw, 24px)',
                   lineHeight: '20px',
                   textAlign: 'center',
                   color: '#FFFFFF',
@@ -210,6 +225,38 @@ export default function GeneratePage() {
           </button>
         </div>
       </div>
+
+      {/* 全屏展演模式 */}
+      {isFullscreen && (
+        <div 
+          className="fixed inset-0 z-50 bg-black flex items-center justify-center"
+          onClick={togglePlay}
+        >
+          <video
+            src={videoUrl}
+            className="w-full h-full object-contain"
+            autoPlay
+            playsInline
+          />
+          {/* 退出全屏按钮 */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsFullscreen(false);
+            }}
+            className="absolute top-6 right-6 text-white hover:scale-110 transition-transform"
+            style={{
+              fontFamily: 'Source Han Sans CN, sans-serif',
+              fontSize: '16px',
+              background: 'rgba(255, 255, 255, 0.2)',
+              padding: '8px 16px',
+              borderRadius: '8px',
+            }}
+          >
+            退出全屏 (ESC)
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -94,12 +94,22 @@ export default function MusicPlayer({ song }: MusicPlayerProps) {
         title="双击进入画面展示"
       >
         {song.cover && song.cover !== '/images/demo-cover.jpg' ? (
-          <Image 
-            src={song.cover} 
-            alt={song.title}
-            fill
-            className="object-cover"
-          />
+          song.cover.includes('?') ? (
+            // 使用普通 img 标签处理带查询参数的图片
+            <img 
+              src={song.cover} 
+              alt={song.title}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            // 使用 Next.js Image 组件处理普通图片
+            <Image 
+              src={song.cover} 
+              alt={song.title}
+              fill
+              className="object-cover"
+            />
+          )
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-purple-400 to-pink-400" />
         )}

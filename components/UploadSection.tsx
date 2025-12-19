@@ -7,15 +7,15 @@ export default function UploadSection() {
   const demoSongs = [
     { 
       id: 1, 
-      title: '一步之遥', 
-      artist: 'Thomas Newman', 
-      cover: '/images/music1.svg',
-      audioUrl: '/music/song1.mp3',
+      title: '彩云追月', 
+      artist: '钢琴轻音乐', 
+      cover: '/images/music1.png',
+      audioUrl: '/music/demo1.flac',
       videoUrl: '/videos/demo1.mp4'
     },
-    { id: 2, title: 'demo2', artist: 'unknown', cover: '/images/demo-cover.jpg', audioUrl: '/music/demo2.mp3', videoUrl: '/videos/demo2.mp4' },
-    { id: 3, title: 'demo3', artist: 'unknown', cover: '/images/demo-cover.jpg', audioUrl: '/music/demo3.mp3', videoUrl: '/videos/demo3.mp4' },
-    { id: 4, title: 'demo4', artist: 'unknown', cover: '/images/demo-cover.jpg', audioUrl: '/music/demo4.mp3', videoUrl: '/videos/demo4.mp4' },
+    { id: 2, title: 'Remember', artist: 'Ólafur Arnalds', cover: '/images/music2.png?v=2', audioUrl: '/music/demo2.flac', videoUrl: '/videos/demo2.mp4' },
+    { id: 3, title: '赛博空间', artist: 'cyberpunk', cover: '/images/music3.png', audioUrl: '/music/demo3.mp3', videoUrl: '/videos/demo3.mp4' },
+    { id: 4, title: '动态空间', artist: 'dynamic', cover: '/images/music4.png?v=2', audioUrl: '/music/demo4.mp3', videoUrl: '/videos/demo4.mp4' },
   ];
 
   return (

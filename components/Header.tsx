@@ -6,7 +6,11 @@ import { Music2, Grid3x3, User } from 'lucide-react';
 
 export default function Header() {
   const pathname = usePathname();
-  const isNotHome = pathname !== '/';
+  
+  // 判断各导航项的选中状态
+  const isStudioActive = ['/studio', '/select', '/style', '/generate'].some(path => pathname.startsWith(path)) || pathname === '/';
+  const isTrainingActive = pathname.startsWith('/training');
+  const isWorksActive = pathname.startsWith('/works');
   
   return (
     <header className="w-full h-20 bg-[#080808] fixed top-0 left-0 z-50">
@@ -32,17 +36,19 @@ export default function Header() {
             href="/studio" 
             icon={<Music2 className="w-[19px] h-5 text-current" />} 
             label="创作空间"
-            isActive={isNotHome}
+            isActive={isStudioActive}
           />
           <NavItem 
             href="/training" 
             icon={<Grid3x3 className="w-5 h-5 text-current" />} 
             label="风格训练"
+            isActive={isTrainingActive}
           />
           <NavItem 
             href="/works" 
             icon={<User className="w-[17px] h-[17px] text-current" />} 
             label="我的作品"
+            isActive={isWorksActive}
           />
           
           {/* 用户头像 */}

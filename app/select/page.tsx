@@ -20,6 +20,8 @@ export default function SelectPage() {
   const [totalDuration, setTotalDuration] = useState(0); // 歌曲总时长（秒）
   const [errorMessage, setErrorMessage] = useState(''); // 错误提示
   const [waveformData, setWaveformData] = useState<number[]>([]); // 波形数据
+  const [isDragging, setIsDragging] = useState<'left' | 'right' | null>(null); // 拖拽状态
+  const waveformRef = useRef<HTMLDivElement>(null); // 波形容器引用
   
   const MAX_DURATION = 30; // 最大选区时长（秒）
   const WAVEFORM_BARS = 80; // 波形条数量
@@ -189,7 +191,63 @@ export default function SelectPage() {
   };
 
   const handleNext = () => {
-    router.push('/generate');
+    router.push('/style');
+  };
+
+  // 拖拽开始
+  const handleDragStart = (side: 'left' | 'right') => (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(side);
+  };
+
+  // 拖拽移动
+  const handleDragMove = (e: React.MouseEvent) => {
+    if (!isDragging || !waveformRef.current || totalDuration <= 0) return;
+
+    const rect = waveformRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percentage = Math.max(0, Math.min(1, x / rect.width));
+    const newTimeInSeconds = Math.floor(percentage * totalDuration);
+
+    const startTotal = parseInt(startMinute) * 60 + parseInt(startSecond);
+    const endTotal = parseInt(endMinute) * 60 + parseInt(endSecond);
+
+    if (isDragging === 'left') {
+      // 拖动左边界（调整开始时间）
+      if (newTimeInSeconds >= endTotal) {
+        return; // 不能超过结束时间
+      }
+      const newDuration = endTotal - newTimeInSeconds;
+      if (newDuration > MAX_DURATION) {
+        showError(`选区时长不能超过${MAX_DURATION}秒`);
+        return;
+      }
+      const mins = Math.floor(newTimeInSeconds / 60);
+      const secs = newTimeInSeconds % 60;
+      setStartMinute(String(mins).padStart(2, '0'));
+      setStartSecond(String(secs).padStart(2, '0'));
+      setDuration(newDuration);
+    } else {
+      // 拖动右边界（调整结束时间）
+      if (newTimeInSeconds <= startTotal) {
+        return; // 不能小于开始时间
+      }
+      const newDuration = newTimeInSeconds - startTotal;
+      if (newDuration > MAX_DURATION) {
+        showError(`选区时长不能超过${MAX_DURATION}秒`);
+        return;
+      }
+      const mins = Math.floor(newTimeInSeconds / 60);
+      const secs = newTimeInSeconds % 60;
+      setEndMinute(String(mins).padStart(2, '0'));
+      setEndSecond(String(secs).padStart(2, '0'));
+      setDuration(newDuration);
+    }
+  };
+
+  // 拖拽结束
+  const handleDragEnd = () => {
+    setIsDragging(null);
   };
 
   // 计算选区位置和宽度（百分比）
@@ -245,24 +303,25 @@ export default function SelectPage() {
             >
               选择播放部分
             </p>
-            
-            {/* 错误提示 */}
-            {errorMessage && (
-              <div 
-                className="mt-4 px-4 py-2 bg-[rgba(248,113,113,0.2)] border border-[#F87171] rounded-lg"
-                style={{ 
-                  fontFamily: 'Source Han Sans CN, sans-serif',
-                  fontSize: '16px',
-                  color: '#F87171',
-                }}
-              >
-                {errorMessage}
-              </div>
-            )}
           </div>
           
           {/* 相对定位容器 - 用于其他元素 */}
           <div className="relative flex-1">
+
+            {/* 错误提示 - 固定在顶部中央 */}
+            {errorMessage && (
+              <div 
+                className="fixed top-24 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 bg-[rgba(248,113,113,0.95)] rounded-lg shadow-lg animate-pulse"
+                style={{ 
+                  fontFamily: 'Source Han Sans CN, sans-serif',
+                  fontSize: '18px',
+                  fontWeight: 'bold',
+                  color: '#FFFFFF',
+                }}
+              >
+                ⚠️ {errorMessage}
+              </div>
+            )}
 
             {/* 时间调整按钮区域 */}
             <div className="flex justify-around" style={{ marginBottom: '60px' }}>
@@ -354,10 +413,15 @@ export default function SelectPage() {
 
                 {/* 音频波形区域 */}
                 <div 
-                  className="relative flex-1 overflow-hidden" 
+                  ref={waveformRef}
+                  className="relative flex-1 overflow-hidden"
                   style={{ 
                     height: '145.71px',
+                    cursor: isDragging ? 'grabbing' : 'default',
                   }}
+                  onMouseMove={handleDragMove}
+                  onMouseUp={handleDragEnd}
+                  onMouseLeave={handleDragEnd}
                 >
                   {/* 波形条 - 上下对称 */}
                   <div className="flex items-center justify-between h-full w-full" style={{ position: 'relative' }}>
@@ -398,21 +462,30 @@ export default function SelectPage() {
                     height: '145.71px',
                     background: 'rgba(173, 70, 255, 0.25)',
                     borderRadius: '2px',
-                    pointerEvents: 'none',
                   }}
                 >
-                  {/* 左边界 */}
-                  <div className="absolute left-0 top-0 w-[6.45px] h-full bg-[#F6339A]" style={{ borderRadius: '2px 0px 0px 2px' }} />
-                  <div className="absolute left-[6.45px] top-0 w-[14.51px] h-full bg-[rgba(246,51,154,0.25)]">
-                    <div className="absolute left-[1.22px] top-[64.6px] w-[9.16px] h-[16.51px] border-[3px] border-white" 
-                         style={{ clipPath: 'polygon(100% 0, 100% 100%, 0 50%)' }} />
+                  {/* 左边界 - 可拖拽 */}
+                  <div 
+                    className="absolute left-0 top-0 w-[20px] h-full cursor-ew-resize z-10 flex items-center"
+                    onMouseDown={handleDragStart('left')}
+                  >
+                    <div className="w-[6.45px] h-full bg-[#F6339A]" style={{ borderRadius: '2px 0px 0px 2px' }} />
+                    <div className="w-[14.51px] h-full bg-[rgba(246,51,154,0.25)] flex items-center justify-center">
+                      <div className="w-[9.16px] h-[16.51px] border-[3px] border-white" 
+                           style={{ clipPath: 'polygon(100% 0, 100% 100%, 0 50%)' }} />
+                    </div>
                   </div>
                   
-                  {/* 右边界 */}
-                  <div className="absolute right-0 top-0 w-[6.45px] h-full bg-[#F6339A]" style={{ borderRadius: '0px 2px 2px 0px' }} />
-                  <div className="absolute right-[6.45px] top-0 w-[14.51px] h-full bg-[rgba(246,51,154,0.25)]">
-                    <div className="absolute right-[1.22px] top-[64.6px] w-[9.16px] h-[16.51px] border-[3px] border-white rotate-180" 
-                         style={{ clipPath: 'polygon(100% 0, 100% 100%, 0 50%)' }} />
+                  {/* 右边界 - 可拖拽 */}
+                  <div 
+                    className="absolute right-0 top-0 w-[20px] h-full cursor-ew-resize z-10 flex items-center justify-end"
+                    onMouseDown={handleDragStart('right')}
+                  >
+                    <div className="w-[14.51px] h-full bg-[rgba(246,51,154,0.25)] flex items-center justify-center">
+                      <div className="w-[9.16px] h-[16.51px] border-[3px] border-white rotate-180" 
+                           style={{ clipPath: 'polygon(100% 0, 100% 100%, 0 50%)' }} />
+                    </div>
+                    <div className="w-[6.45px] h-full bg-[#F6339A]" style={{ borderRadius: '0px 2px 2px 0px' }} />
                   </div>
                 </div>
                 </div>

@@ -1,9 +1,16 @@
 'use client';
 
+import { useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import MusicPlayer from './MusicPlayer';
 
 export default function UploadSection() {
+  const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState('');
+
   const demoSongs = [
     { 
       id: 1, 
@@ -17,6 +24,59 @@ export default function UploadSection() {
     { id: 3, title: '赛博空间', artist: 'cyberpunk', cover: '/images/music3.png', audioUrl: '/music/demo3.mp3', videoUrl: '/videos/demo3.mp4' },
     { id: 4, title: '动态空间', artist: 'dynamic', cover: '/images/music4.png?v=2', audioUrl: '/music/demo4.mp3', videoUrl: '/videos/demo4.mp4' },
   ];
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // 检查文件格式
+    const fileExt = file.name.split('.').pop()?.toLowerCase();
+    if (fileExt !== 'flac' && fileExt !== 'mp3') {
+      setUploadMessage('只支持 flac 和 mp3 格式');
+      setTimeout(() => setUploadMessage(''), 3000);
+      return;
+    }
+
+    setUploading(true);
+    setUploadMessage('上传中...');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setUploadMessage(`上传成功：${result.fileName}`);
+        // 清空文件选择
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+        // 延迟跳转到选择片段页面
+        setTimeout(() => {
+          router.push(`/select?file=${encodeURIComponent(result.fileName)}`);
+        }, 1000);
+      } else {
+        setUploadMessage(`上传失败：${result.error}`);
+      }
+    } catch (error) {
+      console.error('上传错误:', error);
+      setUploadMessage('上传失败，请重试');
+    } finally {
+      setUploading(false);
+      // 3秒后清除消息
+      setTimeout(() => setUploadMessage(''), 3000);
+    }
+  };
 
   return (
     <div 
@@ -57,8 +117,21 @@ export default function UploadSection() {
       </div>
 
       {/* 上传按钮 */}
-      <div className="mb-16 lg:mb-20 flex justify-center">
-        <button className="relative group w-full max-w-[418px]">
+      <div className="mb-16 lg:mb-20 flex flex-col items-center gap-4">
+        {/* 隐藏的文件输入框 */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".flac,.mp3,audio/flac,audio/mpeg"
+          onChange={handleFileChange}
+          className="hidden"
+        />
+        
+        <button 
+          onClick={handleUploadClick}
+          disabled={uploading}
+          className="relative group w-full max-w-[418px] disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           {/* 阴影层 */}
           <div
             className="absolute inset-0 rounded-3xl"
@@ -85,10 +158,23 @@ export default function UploadSection() {
               className="text-white font-bold text-xl lg:text-[32px]"
               style={{ fontFamily: 'Source Han Sans CN, sans-serif' }}
             >
-              上传我的音乐
+              {uploading ? '上传中...' : '上传我的音乐'}
             </span>
           </div>
         </button>
+
+        {/* 上传状态消息 */}
+        {uploadMessage && (
+          <div 
+            className="text-center font-medium text-lg"
+            style={{ 
+              fontFamily: 'Source Han Sans CN, sans-serif',
+              color: uploadMessage.includes('成功') ? '#4ADE80' : uploadMessage.includes('失败') ? '#F87171' : '#DAB2FF'
+            }}
+          >
+            {uploadMessage}
+          </div>
+        )}
       </div>
 
       {/* 示例音乐区域 */}

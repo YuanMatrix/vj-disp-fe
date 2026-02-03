@@ -14,7 +14,12 @@ export default function Sidebar() {
 
   // 根据路由判断当前步骤
   const getCurrentStep = () => {
-    if (pathname === '/generate') return 4; // 画面展示（最后一步）
+    if (pathname === '/') return 0; // 上传音乐
+    if (pathname === '/studio') return 0; // 上传音乐（创作空间）
+    if (pathname === '/select') return 1; // 选择片段
+    if (pathname === '/style') return 2; // 输入描述（选择风格）
+    if (pathname === '/generate') return 4; // 画面展示
+    if (pathname === '/works') return 4; // 画面展示
     return 0; // 默认第一步（上传音乐）
   };
 
@@ -23,7 +28,7 @@ export default function Sidebar() {
   const steps: StepItem[] = [
     { title: '上传音乐', subtitle: '支持多曲风输入' },
     { title: '选择片段', subtitle: '选择播放部分' },
-    { title: '输入描述', subtitle: '选择对应风格\n输入场景提示词' },
+    { title: '输入描述', subtitle: '选择对应风格' },
     { title: '画面生成', subtitle: '生成AI VJ画面' },
     { title: '画面展示', subtitle: '播放AI VJ画面' },
   ];

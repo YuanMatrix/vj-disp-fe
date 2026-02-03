@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    // 确保 public/music 文件夹存在（用于前端播放）
+    // 确保 public/music 文件夹存在
     const musicDir = path.join(process.cwd(), 'public', 'music');
     try {
       await access(musicDir, constants.F_OK);
@@ -38,19 +38,10 @@ export async function POST(request: NextRequest) {
       await mkdir(musicDir, { recursive: true });
     }
 
-    // 同时保存到 musics 文件夹作为备份
-    const musicsDir = path.join(process.cwd(), 'musics');
-    try {
-      await access(musicsDir, constants.F_OK);
-    } catch {
-      await mkdir(musicsDir, { recursive: true });
-    }
-
     // 处理文件名重名问题
     let finalFileName = fileName;
     const fileBaseName = path.basename(fileName, fileExt);
     let filePath = path.join(musicDir, finalFileName);
-    let backupFilePath = path.join(musicsDir, finalFileName);
     
     // 检查文件是否存在，如果存在则添加日期
     try {
@@ -61,16 +52,12 @@ export async function POST(request: NextRequest) {
       const timeStr = date.toTimeString().split(' ')[0].replace(/:/g, ''); // 格式：143025
       finalFileName = `${fileBaseName}_${dateStr}_${timeStr}${fileExt}`;
       filePath = path.join(musicDir, finalFileName);
-      backupFilePath = path.join(musicsDir, finalFileName);
     } catch {
       // 文件不存在，使用原文件名
     }
 
-    // 保存文件到 public/music（用于前端播放）
+    // 保存文件到 public/music
     await writeFile(filePath, buffer);
-    
-    // 同时备份到 musics 文件夹
-    await writeFile(backupFilePath, buffer);
     
     return NextResponse.json(
       { 

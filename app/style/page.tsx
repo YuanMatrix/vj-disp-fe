@@ -1,10 +1,17 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { 
+  generateTaskId, 
+  addTask, 
+  updateTask, 
+  VideoTask,
+  DEFAULT_THUMBNAIL,
+} from '@/data/tasks';
 
 interface TemplateStyle {
   name: string;
@@ -37,6 +44,7 @@ function StylePageContent() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
+  const [statusText, setStatusText] = useState('正在准备...');
   const [estimatedTime, setEstimatedTime] = useState(120); // 预计时间（秒）
   
   const visibleCount = 4; // 一次显示4个风格
@@ -77,38 +85,151 @@ function StylePageContent() {
     fetchTemplates();
   }, [fileName]);
 
-  // 模拟生成进度
-  useEffect(() => {
-    if (!isGenerating) return;
+  // 获取选中风格的图片列表
+  const getStyleImages = useCallback(async (styleName: string): Promise<string[]> => {
+    try {
+      const response = await fetch(`/api/templates/${encodeURIComponent(styleName)}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch style images');
+      }
+      const data = await response.json();
+      return data.images || [];
+    } catch (error) {
+      console.error('Error fetching style images:', error);
+      return [];
+    }
+  }, []);
+
+  // 上传文件到 ComfyUI
+  const uploadFile = useCallback(async (
+    filePath: string, 
+    taskId: string, 
+    fileType: 'audio' | 'image'
+  ): Promise<string | null> => {
+    try {
+      // 首先获取文件内容
+      console.log(`Fetching file: ${filePath}`);
+      const response = await fetch(filePath);
+      
+      if (!response.ok) {
+        throw new Error(`无法获取文件: ${filePath} (HTTP ${response.status})`);
+      }
+      
+      const blob = await response.blob();
+      const localFileName = filePath.split('/').pop() || 'file';
+      const file = new File([blob], localFileName, { type: blob.type });
+
+      console.log(`Uploading ${fileType}: ${localFileName}, size: ${file.size}`);
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('taskId', taskId);
+      formData.append('fileType', fileType);
+
+      const uploadResponse = await fetch('/api/comfyui/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await uploadResponse.json();
+      
+      if (!uploadResponse.ok) {
+        throw new Error(result.error || `上传失败 (HTTP ${uploadResponse.status})`);
+      }
+
+      return result.relativePath;
+    } catch (error) {
+      console.error(`Error uploading ${fileType}:`, error);
+      throw error; // 重新抛出错误以便上层捕获
+    }
+  }, []);
+
+  // 轮询任务状态
+  const pollTaskStatus = useCallback(async (generationTaskId: string, localTaskId: string) => {
+    const maxWaitSeconds = 600; // 最多等待 10 分钟
+    const startTime = Date.now();
     
-    const interval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
+    const poll = async () => {
+      if ((Date.now() - startTime) / 1000 > maxWaitSeconds) {
+        updateTask(localTaskId, { 
+          status: 'failed', 
+          error: '生成超时' 
+        });
+        setIsGenerating(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/comfyui/status/${generationTaskId}`);
+        const result = await response.json();
+
+        if (!result.success) {
+          throw new Error(result.error || 'Status check failed');
+        }
+
+        const elapsed = (Date.now() - startTime) / 1000;
+        const newProgress = Math.min(95, Math.floor((elapsed / 120) * 100));
+        setProgress(newProgress);
+        setEstimatedTime(Math.max(0, 120 - Math.floor(elapsed)));
+
+        if (result.status === 'completed') {
+          // 生成完成
+          const rawVideoPath = result.videoPath || (result.outputFiles?.[0]?.path);
+          
+          // 将 ComfyUI 绝对路径转换为代理 API URL
+          // 例如: /Users/coco/coco-code/ComfyUI/output/vj/xxx.mp4 -> /api/comfyui/output/vj/xxx.mp4
+          const convertToProxyUrl = (absolutePath: string) => {
+            if (!absolutePath) return '';
+            // 提取 output 后面的相对路径
+            const outputIndex = absolutePath.indexOf('/output/');
+            if (outputIndex !== -1) {
+              const relativePath = absolutePath.substring(outputIndex + 8); // 8 = '/output/'.length
+              return `/api/comfyui/output/${relativePath}`;
+            }
+            return absolutePath;
+          };
+          
+          const videoProxyUrl = convertToProxyUrl(rawVideoPath);
+          const thumbnailProxyUrl = videoProxyUrl ? videoProxyUrl.replace('.mp4', '_thumb.png') : DEFAULT_THUMBNAIL;
+          
+          updateTask(localTaskId, {
+            status: 'completed',
+            videoUrl: videoProxyUrl,
+            thumbnail: thumbnailProxyUrl,
+          });
+
+          setProgress(100);
+          setStatusText('生成完成！');
+          
           setTimeout(() => {
-            // 传递歌曲信息到 generate 页面
+            // 跳转到 generate 页面播放
             const params = new URLSearchParams();
             params.set('title', songTitle);
-            if (videoUrl) {
-              params.set('video', videoUrl);
-            }
-            params.set('start', startTime);
-            params.set('end', endTime);
-            if (selectedStyle) {
-              params.set('style', selectedStyle);
-            }
+            params.set('video', videoProxyUrl || videoUrl);
+            params.set('taskId', localTaskId);
             router.push(`/generate?${params.toString()}`);
-          }, 500);
-          return 100;
+          }, 1000);
+        } else if (result.status === 'failed') {
+          updateTask(localTaskId, {
+            status: 'failed',
+            error: result.error || '生成失败',
+          });
+          setIsGenerating(false);
+          setStatusText('生成失败');
+        } else {
+          // 继续轮询
+          setStatusText(result.status === 'processing' ? '正在生成画面...' : '等待处理...');
+          setTimeout(poll, 5000); // 每 5 秒检查一次
         }
-        return prev + 2;
-      });
-      
-      setEstimatedTime(prev => Math.max(0, prev - 2));
-    }, 100);
-    
-    return () => clearInterval(interval);
-  }, [isGenerating, router, songTitle, videoUrl, startTime, endTime, selectedStyle]);
+      } catch (error) {
+        console.error('Poll error:', error);
+        // 继续轮询，除非超过最大等待时间
+        setTimeout(poll, 5000);
+      }
+    };
+
+    poll();
+  }, [router, songTitle, videoUrl]);
 
   const handlePrev = () => {
     setStartIndex(Math.max(0, startIndex - 1));
@@ -131,13 +252,120 @@ function StylePageContent() {
     router.push(`/select?${params.toString()}`);
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!selectedStyle) {
       return;
     }
+    
     setProgress(0);
     setEstimatedTime(120);
+    setStatusText('正在准备...');
     setIsGenerating(true);
+
+    const taskId = generateTaskId();
+
+    // 创建任务记录
+    const newTask: VideoTask = {
+      id: taskId,
+      title: songTitle,
+      style: selectedStyle,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      thumbnail: DEFAULT_THUMBNAIL,
+    };
+    addTask(newTask);
+
+    try {
+      // 步骤 1: 上传音频文件
+      setStatusText('正在上传音频...');
+      setProgress(5);
+      
+      // 构建音频文件路径
+      const audioPath = `/music/${fileName}`;
+      console.log('Audio file path:', audioPath, 'fileName:', fileName);
+      
+      const uploadedAudioPath = await uploadFile(audioPath, taskId, 'audio');
+      
+      if (!uploadedAudioPath) {
+        throw new Error('音频上传失败');
+      }
+
+      updateTask(taskId, { audioPath: uploadedAudioPath, status: 'processing' });
+      setProgress(15);
+
+      // 步骤 2: 获取并上传风格图片
+      setStatusText('正在上传风格图片...');
+      
+      const styleImages = await getStyleImages(selectedStyle);
+      if (styleImages.length === 0) {
+        throw new Error('未找到风格图片');
+      }
+
+      // 上传图片（最多4张）
+      const imagesToUpload = styleImages.slice(0, 4);
+      const uploadedImages: string[] = [];
+      
+      for (let i = 0; i < imagesToUpload.length; i++) {
+        const imagePath = imagesToUpload[i];
+        const uploadedPath = await uploadFile(imagePath, taskId, 'image');
+        if (uploadedPath) {
+          uploadedImages.push(uploadedPath);
+        }
+        setProgress(15 + Math.floor((i + 1) / imagesToUpload.length * 15));
+      }
+
+      if (uploadedImages.length === 0) {
+        throw new Error('图片上传失败');
+      }
+
+      updateTask(taskId, { images: uploadedImages });
+      setProgress(30);
+
+      // 步骤 3: 启动视频生成
+      setStatusText('正在启动视频生成...');
+      
+      const generateResponse = await fetch('/api/comfyui/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          audioPath: uploadedAudioPath,
+          images: uploadedImages,
+          numFrames: 50,
+          width: 384,
+          height: 384,
+          fps: 16,
+        }),
+      });
+
+      if (!generateResponse.ok) {
+        const errorData = await generateResponse.json();
+        throw new Error(errorData.error || '生成请求失败');
+      }
+
+      const generateResult = await generateResponse.json();
+      const generationTaskId = generateResult.taskId;
+
+      updateTask(taskId, { generationTaskId });
+      setProgress(35);
+      setStatusText('正在生成画面...');
+
+      // 步骤 4: 轮询任务状态
+      pollTaskStatus(generationTaskId, taskId);
+
+    } catch (error) {
+      console.error('Generate error:', error);
+      updateTask(taskId, {
+        status: 'failed',
+        error: error instanceof Error ? error.message : '未知错误',
+      });
+      setStatusText(`错误: ${error instanceof Error ? error.message : '未知错误'}`);
+      setTimeout(() => {
+        setIsGenerating(false);
+      }, 3000);
+    }
   };
 
   const visibleStyles = styles.slice(startIndex, startIndex + visibleCount);
@@ -206,7 +434,7 @@ function StylePageContent() {
                 marginBottom: '40px',
               }}
             >
-              正在生成画面...
+              {statusText}
             </p>
             
             {/* 进度条 */}
@@ -234,9 +462,46 @@ function StylePageContent() {
                 fontFamily: 'Source Han Sans CN, sans-serif',
                 fontSize: '16px',
                 color: '#DAB2FF',
+                marginBottom: '30px',
               }}
             >
               预计时间 {estimatedTime} s
+            </p>
+            
+            {/* 后台运行按钮 */}
+            <button
+              onClick={() => {
+                setIsGenerating(false);
+                router.push('/works');
+              }}
+              className="flex items-center justify-center hover:opacity-80 transition-opacity"
+              style={{
+                padding: '12px 32px',
+                borderRadius: '24px',
+                border: '2px solid #DAB2FF',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: 'Source Han Sans CN, sans-serif',
+                  fontSize: '16px',
+                  color: '#DAB2FF',
+                }}
+              >
+                后台运行，稍后查看
+              </span>
+            </button>
+            
+            <p
+              className="text-center"
+              style={{
+                fontFamily: 'Source Han Sans CN, sans-serif',
+                fontSize: '14px',
+                color: '#666',
+                marginTop: '12px',
+              }}
+            >
+              任务将继续在后台运行，可在「我的作品」中查看进度
             </p>
           </div>
         </div>

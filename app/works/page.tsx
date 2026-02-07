@@ -1,20 +1,160 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from "@/components/Header";
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { 
+  getAllTasks, 
+  updateTask, 
+  VideoTask, 
+  DEFAULT_THUMBNAIL,
+  formatDateTime 
+} from '@/data/tasks';
 import { worksData, Work } from '@/data/works';
+
+// 合并的作品类型
+interface DisplayWork {
+  id: string;
+  title: string;
+  style: string;
+  videoUrl: string;
+  thumbnail: string;
+  createdAt: string;
+  status: 'completed' | 'processing' | 'failed' | 'pending';
+  error?: string;
+  generationTaskId?: string;
+}
 
 export default function WorksPage() {
   const router = useRouter();
   const [selectedWork, setSelectedWork] = useState<string | null>(null);
   const [startIndex, setStartIndex] = useState(0);
+  const [works, setWorks] = useState<DisplayWork[]>([]);
   
   const visibleCount = 4; // 每行显示4个
   const rowCount = 2; // 显示2行
   const totalVisible = visibleCount * rowCount;
-  const maxStartIndex = Math.max(0, worksData.length - totalVisible);
+  const maxStartIndex = Math.max(0, works.length - totalVisible);
+
+  // 将 ComfyUI 绝对路径转换为代理 API URL
+  const convertToProxyUrl = useCallback((absolutePath: string) => {
+    if (!absolutePath) return '';
+    // 如果已经是代理 URL，直接返回
+    if (absolutePath.startsWith('/api/comfyui/output/')) {
+      return absolutePath;
+    }
+    // 提取 output 后面的相对路径
+    const outputIndex = absolutePath.indexOf('/output/');
+    if (outputIndex !== -1) {
+      const relativePath = absolutePath.substring(outputIndex + 8);
+      return `/api/comfyui/output/${relativePath}`;
+    }
+    return absolutePath;
+  }, []);
+
+  // 加载作品数据
+  const loadWorks = useCallback(() => {
+    // 获取动态任务
+    const tasks = getAllTasks();
+    const taskWorks: DisplayWork[] = tasks.map(task => {
+      const videoUrl = convertToProxyUrl(task.videoUrl || '');
+      const thumbnail = task.status === 'completed' && task.thumbnail 
+        ? convertToProxyUrl(task.thumbnail)
+        : '/images/default-thumbnail.png';
+      
+      return {
+        id: task.id,
+        title: task.title,
+        style: task.style,
+        videoUrl,
+        thumbnail,
+        createdAt: formatDateTime(task.createdAt),
+        status: task.status,
+        error: task.error,
+        generationTaskId: task.generationTaskId,
+      };
+    });
+
+    // 合并静态演示数据
+    const staticWorks: DisplayWork[] = worksData.map(work => ({
+      id: work.id,
+      title: work.title,
+      style: work.style,
+      videoUrl: work.videoUrl,
+      thumbnail: work.thumbnail,
+      createdAt: work.createdAt,
+      status: 'completed' as const,
+    }));
+
+    // 动态任务在前，静态数据在后
+    setWorks([...taskWorks, ...staticWorks]);
+  }, [convertToProxyUrl]);
+
+  // 检查进行中任务的状态
+  const checkPendingTasks = useCallback(async () => {
+    const tasks = getAllTasks();
+    const pendingTasks = tasks.filter(
+      task => task.status === 'processing' || task.status === 'pending'
+    );
+
+    for (const task of pendingTasks) {
+      if (!task.generationTaskId) continue;
+
+      try {
+        const response = await fetch(`/api/comfyui/status/${task.generationTaskId}`);
+        const result = await response.json();
+
+        if (!result.success) continue;
+
+        if (result.status === 'completed') {
+          const rawVideoPath = result.videoPath || (result.outputFiles?.[0]?.path);
+          
+          // 将 ComfyUI 绝对路径转换为代理 API URL
+          const convertToProxyUrl = (absolutePath: string) => {
+            if (!absolutePath) return '';
+            const outputIndex = absolutePath.indexOf('/output/');
+            if (outputIndex !== -1) {
+              const relativePath = absolutePath.substring(outputIndex + 8);
+              return `/api/comfyui/output/${relativePath}`;
+            }
+            return absolutePath;
+          };
+          
+          const videoProxyUrl = convertToProxyUrl(rawVideoPath);
+          const thumbnailProxyUrl = videoProxyUrl ? videoProxyUrl.replace('.mp4', '_thumb.png') : DEFAULT_THUMBNAIL;
+          
+          updateTask(task.id, {
+            status: 'completed',
+            videoUrl: videoProxyUrl,
+            thumbnail: thumbnailProxyUrl,
+          });
+        } else if (result.status === 'failed') {
+          updateTask(task.id, {
+            status: 'failed',
+            error: result.error || '生成失败',
+          });
+        }
+      } catch (error) {
+        console.error('Error checking task status:', error);
+      }
+    }
+
+    // 重新加载数据
+    loadWorks();
+  }, [loadWorks]);
+
+  // 初始加载和定时检查
+  useEffect(() => {
+    loadWorks();
+
+    // 每 5 秒检查一次进行中的任务
+    const interval = setInterval(() => {
+      checkPendingTasks();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [loadWorks, checkPendingTasks]);
 
   const handlePrev = () => {
     setStartIndex(Math.max(0, startIndex - visibleCount));
@@ -25,12 +165,41 @@ export default function WorksPage() {
   };
 
   // 双击进入播放页面
-  const handleDoubleClick = (work: Work) => {
+  const handleDoubleClick = (work: DisplayWork) => {
+    if (work.status !== 'completed' || !work.videoUrl) {
+      return; // 未完成的任务不能播放
+    }
     const url = `/generate?video=${encodeURIComponent(work.videoUrl)}&title=${encodeURIComponent(work.title)}`;
     router.push(url);
   };
 
-  const visibleWorks = worksData.slice(startIndex, startIndex + totalVisible);
+  const visibleWorks = works.slice(startIndex, startIndex + totalVisible);
+
+  // 获取状态显示文字
+  const getStatusText = (status: DisplayWork['status']) => {
+    switch (status) {
+      case 'processing':
+      case 'pending':
+        return '生成中...';
+      case 'failed':
+        return '生成失败';
+      default:
+        return null;
+    }
+  };
+
+  // 获取状态颜色
+  const getStatusColor = (status: DisplayWork['status']) => {
+    switch (status) {
+      case 'processing':
+      case 'pending':
+        return '#DAB2FF';
+      case 'failed':
+        return '#FF6B6B';
+      default:
+        return null;
+    }
+  };
 
   return (
     <main className="h-screen bg-[#121212] overflow-hidden">
@@ -112,7 +281,7 @@ export default function WorksPage() {
                   onDoubleClick={() => handleDoubleClick(work)}
                   className={`cursor-pointer transition-all duration-200 relative ${
                     selectedWork === work.id ? 'ring-4 ring-[#F6339A]' : ''
-                  }`}
+                  } ${work.status !== 'completed' ? 'opacity-80' : ''}`}
                   style={{
                     borderRadius: '12px',
                     overflow: 'hidden',
@@ -126,6 +295,33 @@ export default function WorksPage() {
                       backgroundColor: '#2a2a2a',
                     }}
                   />
+
+                  {/* 状态遮罩层（进行中/失败） */}
+                  {work.status !== 'completed' && (
+                    <div 
+                      className="absolute inset-0 flex items-center justify-center"
+                      style={{
+                        background: 'rgba(0, 0, 0, 0.6)',
+                      }}
+                    >
+                      <div className="text-center">
+                        {work.status === 'processing' || work.status === 'pending' ? (
+                          <div className="animate-spin w-10 h-10 border-4 border-t-transparent rounded-full mx-auto mb-2" style={{ borderColor: '#DAB2FF', borderTopColor: 'transparent' }} />
+                        ) : (
+                          <div className="text-4xl mb-2">⚠️</div>
+                        )}
+                        <p
+                          style={{
+                            fontFamily: 'Source Han Sans CN, sans-serif',
+                            fontSize: '14px',
+                            color: getStatusColor(work.status) || '#fff',
+                          }}
+                        >
+                          {getStatusText(work.status)}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   
                   {/* 作品信息 - 底部悬浮 */}
                   <div 
@@ -179,4 +375,3 @@ export default function WorksPage() {
     </main>
   );
 }
-

@@ -12,12 +12,21 @@ interface TemplateStyle {
   coverImage: string | null;
 }
 
+// Demo 歌曲到默认风格的映射
+const demoStyleMap: Record<string, string> = {
+  'demo1': '水墨风格',
+  'demo2': '油画风格',
+  'demo3': '赛博风格',
+  'demo4': '喜：琥珀金+暖白',
+};
+
 function StylePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
   // 从 URL 获取歌曲信息
   const songTitle = searchParams.get('title') || '画面展示';
+  const fileName = searchParams.get('file') || '';
   const videoUrl = searchParams.get('video') || '';
   const startTime = searchParams.get('start') || '0';
   const endTime = searchParams.get('end') || '30';
@@ -41,6 +50,22 @@ function StylePageContent() {
         const data = await response.json();
         if (data.templates) {
           setStyles(data.templates);
+          
+          // 根据 demo 文件名设置默认风格
+          const demoKey = fileName.replace(/\.[^/.]+$/, ''); // 去掉扩展名
+          const defaultStyle = demoStyleMap[demoKey];
+          if (defaultStyle) {
+            // 查找匹配的风格及其索引
+            const styleIndex = data.templates.findIndex((s: TemplateStyle) => 
+              s.name === defaultStyle || s.name.includes(defaultStyle.split('：')[0])
+            );
+            if (styleIndex !== -1) {
+              setSelectedStyle(data.templates[styleIndex].name);
+              // 让选中的风格显示在第2个位置（索引1）
+              const newStartIndex = Math.max(0, Math.min(styleIndex - 1, data.templates.length - visibleCount));
+              setStartIndex(newStartIndex);
+            }
+          }
         }
       } catch (error) {
         console.error('Failed to fetch templates:', error);
@@ -50,7 +75,7 @@ function StylePageContent() {
     };
     
     fetchTemplates();
-  }, []);
+  }, [fileName]);
 
   // 模拟生成进度
   useEffect(() => {
@@ -91,6 +116,19 @@ function StylePageContent() {
 
   const handleNext = () => {
     setStartIndex(Math.min(maxStartIndex, startIndex + 1));
+  };
+
+  // 返回到片段选择页面，保留时间参数
+  const handleBack = () => {
+    const params = new URLSearchParams();
+    params.set('title', songTitle);
+    params.set('file', fileName);
+    if (videoUrl) {
+      params.set('video', videoUrl);
+    }
+    params.set('start', startTime);
+    params.set('end', endTime);
+    router.push(`/select?${params.toString()}`);
   };
 
   const handleGenerate = () => {
@@ -277,22 +315,18 @@ function StylePageContent() {
             </button>
 
             {/* 风格卡片列表 */}
-            <div className="flex-1 flex gap-6 overflow-hidden items-stretch">
+            <div className="flex-1 flex gap-6 items-stretch">
               {visibleStyles.map((style) => (
                 <div
                   key={style.name}
                   onClick={() => setSelectedStyle(style.name)}
-                  className={`flex-1 cursor-pointer transition-all duration-200 flex flex-col ${
-                    selectedStyle === style.name ? 'ring-4 ring-[#F6339A] scale-105' : 'hover:scale-102'
+                  className={`flex-1 cursor-pointer transition-all duration-200 flex flex-col rounded-xl ${
+                    selectedStyle === style.name ? 'ring-4 ring-[#F6339A]' : ''
                   }`}
-                  style={{
-                    borderRadius: '12px',
-                    overflow: 'hidden',
-                  }}
                 >
                   {/* 风格图片 */}
                   <div
-                    className="w-full aspect-square bg-cover bg-center"
+                    className="w-full aspect-square bg-cover bg-center rounded-t-xl"
                     style={{
                       backgroundImage: style.coverImage ? `url(${style.coverImage})` : 'none',
                       backgroundColor: '#2a2a2a',
@@ -300,7 +334,7 @@ function StylePageContent() {
                   />
                   
                   {/* 风格信息 */}
-                  <div className="p-4" style={{ background: '#1a1a1a', height: '100px' }}>
+                  <div className="p-4 rounded-b-xl" style={{ background: '#1a1a1a', height: '100px' }}>
                     <h3
                       className="text-white font-bold text-center"
                       style={{
@@ -346,8 +380,37 @@ function StylePageContent() {
             </button>
           </div>
 
-          {/* 生成按钮 */}
-          <div className="flex justify-end">
+          {/* 按钮区域 */}
+          <div className="flex justify-between">
+            {/* 返回按钮 */}
+            <button
+              onClick={handleBack}
+              className="relative group"
+            >
+              <div
+                className="flex items-center justify-center hover:scale-105 active:scale-95 transition-transform"
+                style={{
+                  width: '120px',
+                  height: '58px',
+                  borderRadius: '24px',
+                  border: '2px solid #DAB2FF',
+                }}
+              >
+                <span
+                  className="font-bold"
+                  style={{
+                    fontFamily: 'Source Han Sans CN, sans-serif',
+                    fontSize: '24px',
+                    lineHeight: '20px',
+                    color: '#DAB2FF',
+                  }}
+                >
+                  返回
+                </span>
+              </div>
+            </button>
+            
+            {/* 生成按钮 */}
             <button
               onClick={handleGenerate}
               disabled={!selectedStyle || isGenerating}

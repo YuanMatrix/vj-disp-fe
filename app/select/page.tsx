@@ -11,17 +11,39 @@ function SelectPageContent() {
   const searchParams = useSearchParams();
   const audioRef = useRef<HTMLAudioElement>(null);
   
+  // 从 URL 参数获取保存的时间（用于返回时恢复）
+  const savedStart = searchParams.get('start');
+  const savedEnd = searchParams.get('end');
+  
+  // 解析保存的时间
+  const getInitialTime = (savedTime: string | null, defaultMinute: string, defaultSecond: string) => {
+    if (savedTime) {
+      const totalSeconds = parseInt(savedTime);
+      const mins = Math.floor(totalSeconds / 60);
+      const secs = totalSeconds % 60;
+      return {
+        minute: String(mins).padStart(2, '0'),
+        second: String(secs).padStart(2, '0'),
+      };
+    }
+    return { minute: defaultMinute, second: defaultSecond };
+  };
+  
+  const initialStart = getInitialTime(savedStart, '00', '00');
+  const initialEnd = getInitialTime(savedEnd, '00', '30');
+  
   const [isPlaying, setIsPlaying] = useState(false);
-  const [startMinute, setStartMinute] = useState('00');
-  const [startSecond, setStartSecond] = useState('00');
-  const [endMinute, setEndMinute] = useState('00');
-  const [endSecond, setEndSecond] = useState('30');
-  const [duration, setDuration] = useState(30.0);
+  const [startMinute, setStartMinute] = useState(initialStart.minute);
+  const [startSecond, setStartSecond] = useState(initialStart.second);
+  const [endMinute, setEndMinute] = useState(initialEnd.minute);
+  const [endSecond, setEndSecond] = useState(initialEnd.second);
+  const [duration, setDuration] = useState(savedStart && savedEnd ? parseInt(savedEnd) - parseInt(savedStart) : 30.0);
   const [totalDuration, setTotalDuration] = useState(0); // 歌曲总时长（秒）
   const [errorMessage, setErrorMessage] = useState(''); // 错误提示
   const [waveformData, setWaveformData] = useState<number[]>([]); // 波形数据
   const [isDragging, setIsDragging] = useState<'left' | 'right' | null>(null); // 拖拽状态
   const waveformRef = useRef<HTMLDivElement>(null); // 波形容器引用
+  const [hasInitialized, setHasInitialized] = useState(!!savedStart); // 是否已有保存的时间
   
   const MAX_DURATION = 30; // 最大选区时长（秒）
   const WAVEFORM_BARS = 80; // 波形条数量
@@ -98,21 +120,23 @@ function SelectPageContent() {
         const audioDuration = audioRef.current?.duration || 0;
         setTotalDuration(audioDuration);
         
-        // 设置默认选区为歌曲中间的30秒（或更短）
-        const selectDuration = Math.min(MAX_DURATION, audioDuration);
-        const startTime = Math.floor((audioDuration - selectDuration) / 2);
-        const endTime = startTime + selectDuration;
-        
-        const startMins = Math.floor(startTime / 60);
-        const startSecs = Math.floor(startTime % 60);
-        const endMins = Math.floor(endTime / 60);
-        const endSecs = Math.floor(endTime % 60);
-        
-        setStartMinute(String(startMins).padStart(2, '0'));
-        setStartSecond(String(startSecs).padStart(2, '0'));
-        setEndMinute(String(endMins).padStart(2, '0'));
-        setEndSecond(String(endSecs).padStart(2, '0'));
-        setDuration(selectDuration);
+        // 只有在没有保存的时间时，才设置默认选区为歌曲中间的30秒（或更短）
+        if (!hasInitialized) {
+          const selectDuration = Math.min(MAX_DURATION, audioDuration);
+          const startTime = Math.floor((audioDuration - selectDuration) / 2);
+          const endTime = startTime + selectDuration;
+          
+          const startMins = Math.floor(startTime / 60);
+          const startSecs = Math.floor(startTime % 60);
+          const endMins = Math.floor(endTime / 60);
+          const endSecs = Math.floor(endTime % 60);
+          
+          setStartMinute(String(startMins).padStart(2, '0'));
+          setStartSecond(String(startSecs).padStart(2, '0'));
+          setEndMinute(String(endMins).padStart(2, '0'));
+          setEndSecond(String(endSecs).padStart(2, '0'));
+          setDuration(selectDuration);
+        }
       };
       
       audioRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
@@ -121,7 +145,7 @@ function SelectPageContent() {
         audioRef.current?.removeEventListener('loadedmetadata', handleLoadedMetadata);
       };
     }
-  }, []);
+  }, [hasInitialized]);
 
   const handlePlay = () => {
     if (audioRef.current) {
@@ -195,6 +219,7 @@ function SelectPageContent() {
   const handleNext = () => {
     const params = new URLSearchParams();
     params.set('title', songTitle);
+    params.set('file', fileName); // 传递文件名用于默认风格选择
     if (videoUrl) {
       params.set('video', videoUrl);
     }
@@ -677,7 +702,7 @@ function SelectPageContent() {
               </div>
             </div>
 
-            {/* 进入画面生成按钮 */}
+            {/* 选择风格按钮 */}
             <div className="flex justify-end">
               <button
                 onClick={handleNext}
@@ -697,7 +722,7 @@ function SelectPageContent() {
                     lineHeight: '20px',
                   }}
                 >
-                  进入画面生成
+                  选择风格
                 </span>
               </button>
             </div>

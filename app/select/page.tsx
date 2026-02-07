@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Suspense } from 'react';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 
-export default function SelectPage() {
+function SelectPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -27,6 +27,8 @@ export default function SelectPage() {
   const WAVEFORM_BARS = 80; // 波形条数量
   
   const fileName = searchParams.get('file') || 'demo1.flac';
+  const songTitle = searchParams.get('title') || fileName.replace(/\.[^/.]+$/, ''); // 歌曲标题
+  const videoUrl = searchParams.get('video') || ''; // 视频地址
   const audioUrl = `/music/${fileName}`;
 
   // 格式化时间显示 (秒 -> m:ss)
@@ -191,7 +193,17 @@ export default function SelectPage() {
   };
 
   const handleNext = () => {
-    router.push('/style');
+    const params = new URLSearchParams();
+    params.set('title', songTitle);
+    if (videoUrl) {
+      params.set('video', videoUrl);
+    }
+    // 传递选区的开始和结束时间
+    const startTime = parseInt(startMinute) * 60 + parseInt(startSecond);
+    const endTime = parseInt(endMinute) * 60 + parseInt(endSecond);
+    params.set('start', String(startTime));
+    params.set('end', String(endTime));
+    router.push(`/style?${params.toString()}`);
   };
 
   // 拖拽开始
@@ -301,7 +313,7 @@ export default function SelectPage() {
                 color: '#929292',
               }}
             >
-              选择播放部分
+              {songTitle} · 选择播放部分
             </p>
           </div>
           
@@ -693,5 +705,17 @@ export default function SelectPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function SelectPage() {
+  return (
+    <Suspense fallback={
+      <div className="w-screen h-screen flex items-center justify-center" style={{ background: '#121212' }}>
+        <div style={{ color: '#FFFFFF' }}>加载中...</div>
+      </div>
+    }>
+      <SelectPageContent />
+    </Suspense>
   );
 }

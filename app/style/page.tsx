@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Header from '@/components/Header';
 import Sidebar from '@/components/Sidebar';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -12,8 +12,16 @@ interface TemplateStyle {
   coverImage: string | null;
 }
 
-export default function StylePage() {
+function StylePageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  
+  // 从 URL 获取歌曲信息
+  const songTitle = searchParams.get('title') || '画面展示';
+  const videoUrl = searchParams.get('video') || '';
+  const startTime = searchParams.get('start') || '0';
+  const endTime = searchParams.get('end') || '30';
+  
   const [styles, setStyles] = useState<TemplateStyle[]>([]);
   const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
   const [startIndex, setStartIndex] = useState(0);
@@ -53,7 +61,18 @@ export default function StylePage() {
         if (prev >= 100) {
           clearInterval(interval);
           setTimeout(() => {
-            router.push('/generate');
+            // 传递歌曲信息到 generate 页面
+            const params = new URLSearchParams();
+            params.set('title', songTitle);
+            if (videoUrl) {
+              params.set('video', videoUrl);
+            }
+            params.set('start', startTime);
+            params.set('end', endTime);
+            if (selectedStyle) {
+              params.set('style', selectedStyle);
+            }
+            router.push(`/generate?${params.toString()}`);
           }, 500);
           return 100;
         }
@@ -64,7 +83,7 @@ export default function StylePage() {
     }, 100);
     
     return () => clearInterval(interval);
-  }, [isGenerating, router]);
+  }, [isGenerating, router, songTitle, videoUrl, startTime, endTime, selectedStyle]);
 
   const handlePrev = () => {
     setStartIndex(Math.max(0, startIndex - 1));
@@ -368,5 +387,17 @@ export default function StylePage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function StylePage() {
+  return (
+    <Suspense fallback={
+      <div className="w-screen h-screen flex items-center justify-center" style={{ background: '#121212' }}>
+        <div style={{ color: '#FFFFFF' }}>加载中...</div>
+      </div>
+    }>
+      <StylePageContent />
+    </Suspense>
   );
 }

@@ -22,19 +22,29 @@ export default function MusicPlayer({ song }: MusicPlayerProps) {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1); // 默认音量设置为 100%
+  const [isSelected, setIsSelected] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const router = useRouter();
 
-  // 处理双击封面跳转
-  const handleCoverDoubleClick = () => {
-    const params = new URLSearchParams();
-    if (song.videoUrl) {
-      params.set('video', song.videoUrl);
-    }
-    if (song.title) {
+  // 处理双击跳转到片段选择页面
+  const handleDoubleClick = () => {
+    if (song.audioUrl) {
+      // 从 audioUrl 提取文件名，如 /music/demo1.flac -> demo1.flac
+      const fileName = song.audioUrl.split('/').pop() || '';
+      const params = new URLSearchParams();
+      params.set('file', fileName);
       params.set('title', song.title);
+      if (song.videoUrl) {
+        params.set('video', song.videoUrl);
+      }
+      router.push(`/select?${params.toString()}`);
     }
-    router.push(`/generate?${params.toString()}`);
+  };
+
+  // 处理单击选中
+  const handleClick = () => {
+    setIsSelected(true);
   };
 
   // 设置音量
@@ -70,6 +80,7 @@ export default function MusicPlayer({ song }: MusicPlayerProps) {
 
   // 点击进度条跳转
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
     if (!audioRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
@@ -86,12 +97,34 @@ export default function MusicPlayer({ song }: MusicPlayerProps) {
   };
 
   return (
-    <div className="w-full max-w-[547px] h-[120px] bg-[#080808] rounded-xl p-[15px] flex items-center gap-4 relative">
+    <div 
+      className={`w-full max-w-[547px] h-[120px] bg-[#080808] rounded-xl p-[15px] flex items-center gap-4 relative cursor-pointer transition-all duration-200 ${
+        isSelected ? 'ring-4 ring-[#F6339A]' : 'hover:ring-2 hover:ring-[#DAB2FF]'
+      }`}
+      onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Hover 提示 */}
+      {isHovered && !isSelected && (
+        <div 
+          className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-xl z-10 pointer-events-none"
+        >
+          <span 
+            className="text-white font-bold"
+            style={{
+              fontFamily: 'Source Han Sans CN, sans-serif',
+              fontSize: '16px',
+            }}
+          >
+            双击进入片段选择
+          </span>
+        </div>
+      )}
       {/* 歌曲封面 */}
       <div 
-        className="w-[90px] h-[90px] bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex-shrink-0 overflow-hidden relative cursor-pointer hover:opacity-80 transition-opacity"
-        onDoubleClick={handleCoverDoubleClick}
-        title="双击进入画面展示"
+        className="w-[90px] h-[90px] bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex-shrink-0 overflow-hidden relative"
       >
         {song.cover && song.cover !== '/images/demo-cover.jpg' ? (
           song.cover.includes('?') ? (
@@ -129,7 +162,10 @@ export default function MusicPlayer({ song }: MusicPlayerProps) {
         <div className="flex items-center gap-5">
           {/* 播放/暂停按钮 */}
           <button
-            onClick={() => setIsPlaying(!isPlaying)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsPlaying(!isPlaying);
+            }}
           >
             {isPlaying ? (
               <Image 

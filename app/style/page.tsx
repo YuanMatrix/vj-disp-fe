@@ -11,7 +11,11 @@ import {
   updateTask, 
   VideoTask,
   DEFAULT_THUMBNAIL,
+  hasRunningTask,
+  getNextPendingTask,
+  getPendingTaskCount,
 } from '@/data/tasks';
+import { generateConfig } from '@/config/generate';
 
 interface TemplateStyle {
   name: string;
@@ -45,7 +49,8 @@ function StylePageContent() {
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState('正在准备...');
-  const [estimatedTime, setEstimatedTime] = useState(120); // 预计时间（秒）
+  const [estimatedTime, setEstimatedTime] = useState(generateConfig.progress.estimatedTimeSeconds);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null); // 错误弹窗
   
   const visibleCount = 4; // 一次显示4个风格
   const maxStartIndex = Math.max(0, styles.length - visibleCount);
@@ -144,18 +149,29 @@ function StylePageContent() {
     }
   }, []);
 
+  // 检查并启动下一个待处理任务（在当前页面不执行，由 works 页面处理）
+  const checkAndStartNextTask = useCallback(() => {
+    const nextTask = getNextPendingTask();
+    if (nextTask) {
+      console.log('Queue has pending task:', nextTask.id);
+      // 这里不自动启动，让用户在 works 页面查看
+    }
+  }, []);
+
   // 轮询任务状态
   const pollTaskStatus = useCallback(async (generationTaskId: string, localTaskId: string) => {
-    const maxWaitSeconds = 600; // 最多等待 10 分钟
+    const maxWaitSeconds = generateConfig.task.timeoutSeconds; // 最多等待 1 小时
     const startTime = Date.now();
     
     const poll = async () => {
       if ((Date.now() - startTime) / 1000 > maxWaitSeconds) {
         updateTask(localTaskId, { 
           status: 'failed', 
-          error: '生成超时' 
+          error: '任务超时（超过1小时）' 
         });
         setIsGenerating(false);
+        // 检查并启动下一个待处理任务
+        checkAndStartNextTask();
         return;
       }
 
@@ -163,14 +179,24 @@ function StylePageContent() {
         const response = await fetch(`/api/comfyui/status/${generationTaskId}`);
         const result = await response.json();
 
-        if (!result.success) {
-          throw new Error(result.error || 'Status check failed');
+        // 如果返回错误状态码（404、500等）或任务不存在，直接标记为失败
+        if (!response.ok || !result.success) {
+          const errorMsg = result.error || (response.status === 404 ? '任务不存在或已被删除' : `服务器错误 (${response.status})`);
+          updateTask(localTaskId, {
+            status: 'failed',
+            error: errorMsg,
+          });
+          setIsGenerating(false);
+          setStatusText(`错误: ${errorMsg}`);
+          checkAndStartNextTask();
+          return;
         }
 
         const elapsed = (Date.now() - startTime) / 1000;
-        const newProgress = Math.min(95, Math.floor((elapsed / 120) * 100));
+        const estimatedTotal = generateConfig.progress.estimatedTimeSeconds;
+        const newProgress = Math.min(95, Math.floor((elapsed / estimatedTotal) * 100));
         setProgress(newProgress);
-        setEstimatedTime(Math.max(0, 120 - Math.floor(elapsed)));
+        setEstimatedTime(Math.max(0, estimatedTotal - Math.floor(elapsed)));
 
         if (result.status === 'completed') {
           // 生成完成
@@ -190,12 +216,13 @@ function StylePageContent() {
           };
           
           const videoProxyUrl = convertToProxyUrl(rawVideoPath);
-          const thumbnailProxyUrl = videoProxyUrl ? videoProxyUrl.replace('.mp4', '_thumb.png') : DEFAULT_THUMBNAIL;
+          // 使用默认封面图（ComfyUI 可能不生成缩略图）
+          // 后续可以通过 ffmpeg 从视频提取第一帧作为缩略图
           
           updateTask(localTaskId, {
             status: 'completed',
             videoUrl: videoProxyUrl,
-            thumbnail: thumbnailProxyUrl,
+            thumbnail: DEFAULT_THUMBNAIL,
           });
 
           setProgress(100);
@@ -216,20 +243,22 @@ function StylePageContent() {
           });
           setIsGenerating(false);
           setStatusText('生成失败');
+          // 检查并启动下一个待处理任务
+          checkAndStartNextTask();
         } else {
           // 继续轮询
           setStatusText(result.status === 'processing' ? '正在生成画面...' : '等待处理...');
-          setTimeout(poll, 5000); // 每 5 秒检查一次
+          setTimeout(poll, generateConfig.task.pollIntervalMs); // 每 5 秒检查一次
         }
       } catch (error) {
         console.error('Poll error:', error);
         // 继续轮询，除非超过最大等待时间
-        setTimeout(poll, 5000);
+        setTimeout(poll, generateConfig.task.pollIntervalMs);
       }
     };
 
     poll();
-  }, [router, songTitle, videoUrl]);
+  }, [router, songTitle, videoUrl, checkAndStartNextTask]);
 
   const handlePrev = () => {
     setStartIndex(Math.max(0, startIndex - 1));
@@ -239,26 +268,38 @@ function StylePageContent() {
     setStartIndex(Math.min(maxStartIndex, startIndex + 1));
   };
 
-  // 返回到片段选择页面，保留时间参数
-  const handleBack = () => {
-    const params = new URLSearchParams();
-    params.set('title', songTitle);
-    params.set('file', fileName);
-    if (videoUrl) {
-      params.set('video', videoUrl);
-    }
-    params.set('start', startTime);
-    params.set('end', endTime);
-    router.push(`/select?${params.toString()}`);
-  };
-
   const handleGenerate = async () => {
     if (!selectedStyle) {
       return;
     }
     
+    // 检查是否有正在运行的任务
+    if (hasRunningTask()) {
+      const pendingCount = getPendingTaskCount();
+      setErrorMessage(`当前有任务正在运行中，新任务将加入队列排队。\n队列中已有 ${pendingCount} 个任务等待处理。`);
+      
+      // 创建 pending 状态的任务
+      const taskId = generateTaskId();
+      const newTask: VideoTask = {
+        id: taskId,
+        title: songTitle,
+        style: selectedStyle,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        thumbnail: DEFAULT_THUMBNAIL,
+      };
+      addTask(newTask);
+      
+      // 3秒后跳转到我的作品页面
+      setTimeout(() => {
+        router.push('/works');
+      }, 3000);
+      return;
+    }
+    
     setProgress(0);
-    setEstimatedTime(120);
+    setEstimatedTime(generateConfig.progress.estimatedTimeSeconds);
     setStatusText('正在准备...');
     setIsGenerating(true);
 
@@ -292,19 +333,63 @@ function StylePageContent() {
       }
 
       updateTask(taskId, { audioPath: uploadedAudioPath, status: 'processing' });
-      setProgress(15);
+      setProgress(generateConfig.progress.afterAudioUpload);
 
       // 步骤 2: 获取并上传风格图片
-      setStatusText('正在上传风格图片...');
+      setStatusText('正在检查风格图片...');
       
       const styleImages = await getStyleImages(selectedStyle);
-      if (styleImages.length === 0) {
-        throw new Error('未找到风格图片');
+      
+      // 检查图片数量是否在配置范围内
+      const { minCount, maxCount } = generateConfig.styleImages;
+      if (styleImages.length < minCount || styleImages.length > maxCount) {
+        const errorMsg = styleImages.length < minCount 
+          ? `风格「${selectedStyle}」只有 ${styleImages.length} 张图片，需要至少 ${minCount} 张图片才能生成视频`
+          : `风格「${selectedStyle}」有 ${styleImages.length} 张图片，最多只能使用 ${maxCount} 张图片`;
+        
+        // 取消任务
+        updateTask(taskId, { status: 'failed', error: errorMsg });
+        setIsGenerating(false);
+        setErrorMessage(errorMsg);
+        return;
       }
 
-      // 上传图片（最多4张）
-      const imagesToUpload = styleImages.slice(0, 4);
+      setStatusText('正在上传风格图片...');
+      
+      // 上传图片（根据配置限制数量）
+      const imagesToUpload = styleImages.slice(0, maxCount);
       const uploadedImages: string[] = [];
+      
+      // 获取第一张图片的尺寸，用于等比例计算输出尺寸
+      const { maxSize, defaultWidth, defaultHeight } = generateConfig.video;
+      let outputWidth = defaultWidth;
+      let outputHeight = defaultHeight;
+      
+      if (imagesToUpload.length > 0) {
+        try {
+          const firstImageSize = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+            img.onerror = reject;
+            img.src = imagesToUpload[0];
+          });
+          
+          // 等比例缩放，最长边为配置的 maxSize
+          if (firstImageSize.width >= firstImageSize.height) {
+            // 宽度是最长边
+            outputWidth = maxSize;
+            outputHeight = Math.round((firstImageSize.height / firstImageSize.width) * maxSize);
+          } else {
+            // 高度是最长边
+            outputHeight = maxSize;
+            outputWidth = Math.round((firstImageSize.width / firstImageSize.height) * maxSize);
+          }
+          
+          console.log(`Image size: ${firstImageSize.width}x${firstImageSize.height} -> Output: ${outputWidth}x${outputHeight}`);
+        } catch (error) {
+          console.error(`Failed to get image size, using default ${defaultWidth}x${defaultHeight}:`, error);
+        }
+      }
       
       for (let i = 0; i < imagesToUpload.length; i++) {
         const imagePath = imagesToUpload[i];
@@ -312,7 +397,8 @@ function StylePageContent() {
         if (uploadedPath) {
           uploadedImages.push(uploadedPath);
         }
-        setProgress(15 + Math.floor((i + 1) / imagesToUpload.length * 15));
+        const progressRange = generateConfig.progress.afterImageUpload - generateConfig.progress.afterAudioUpload;
+        setProgress(generateConfig.progress.afterAudioUpload + Math.floor((i + 1) / imagesToUpload.length * progressRange));
       }
 
       if (uploadedImages.length === 0) {
@@ -320,7 +406,7 @@ function StylePageContent() {
       }
 
       updateTask(taskId, { images: uploadedImages });
-      setProgress(30);
+      setProgress(generateConfig.progress.afterImageUpload);
 
       // 步骤 3: 启动视频生成
       setStatusText('正在启动视频生成...');
@@ -333,10 +419,10 @@ function StylePageContent() {
         body: JSON.stringify({
           audioPath: uploadedAudioPath,
           images: uploadedImages,
-          numFrames: 50,
-          width: 384,
-          height: 384,
-          fps: 16,
+          numFrames: Math.round((parseFloat(endTime) - parseFloat(startTime)) * generateConfig.video.fps), // 秒数 * fps
+          width: outputWidth,
+          height: outputHeight,
+          fps: generateConfig.video.fps,
         }),
       });
 
@@ -349,7 +435,7 @@ function StylePageContent() {
       const generationTaskId = generateResult.taskId;
 
       updateTask(taskId, { generationTaskId });
-      setProgress(35);
+      setProgress(generateConfig.progress.afterGenerateStart);
       setStatusText('正在生成画面...');
 
       // 步骤 4: 轮询任务状态
@@ -364,7 +450,7 @@ function StylePageContent() {
       setStatusText(`错误: ${error instanceof Error ? error.message : '未知错误'}`);
       setTimeout(() => {
         setIsGenerating(false);
-      }, 3000);
+      }, generateConfig.task.errorDisplayMs);
     }
   };
 
@@ -390,6 +476,85 @@ function StylePageContent() {
   return (
     <main className="min-h-screen bg-[#121212] overflow-x-hidden">
       <Header />
+      
+      {/* 错误弹窗 */}
+      {errorMessage && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70">
+          <div 
+            className="flex flex-col items-center"
+            style={{
+              padding: '40px 60px',
+              background: 'rgba(18, 18, 18, 0.95)',
+              borderRadius: '24px',
+              maxWidth: '500px',
+            }}
+          >
+            {/* 警告图标 */}
+            <div className="text-5xl mb-4">⚠️</div>
+            
+            {/* 标题 */}
+            <h2
+              className="text-white font-bold text-center"
+              style={{
+                fontFamily: 'Source Han Sans CN, sans-serif',
+                fontSize: '24px',
+                marginBottom: '16px',
+              }}
+            >
+              图片数量不符合要求
+            </h2>
+            
+            {/* 错误信息 */}
+            <p
+              className="text-center"
+              style={{
+                fontFamily: 'Source Han Sans CN, sans-serif',
+                fontSize: '16px',
+                color: '#929292',
+                marginBottom: '12px',
+                lineHeight: '1.6',
+              }}
+            >
+              {errorMessage}
+            </p>
+            
+            {/* 要求说明 */}
+            <p
+              className="text-center"
+              style={{
+                fontFamily: 'Source Han Sans CN, sans-serif',
+                fontSize: '14px',
+                color: '#DAB2FF',
+                marginBottom: '30px',
+              }}
+            >
+              生成视频需要 4-10 张风格图片
+            </p>
+            
+            {/* 确定按钮 */}
+            <button
+              onClick={() => setErrorMessage(null)}
+              className="flex items-center justify-center hover:scale-105 active:scale-95 transition-transform"
+              style={{
+                width: '120px',
+                height: '48px',
+                borderRadius: '24px',
+                background: 'linear-gradient(90deg, #AD46FF 0%, #F6339A 100%)',
+              }}
+            >
+              <span
+                className="text-white font-bold"
+                style={{
+                  fontFamily: 'Source Han Sans CN, sans-serif',
+                  fontSize: '18px',
+                }}
+              >
+                确定
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
       
       {/* 生成中弹窗 */}
       {isGenerating && (
@@ -646,35 +811,7 @@ function StylePageContent() {
           </div>
 
           {/* 按钮区域 */}
-          <div className="flex justify-between">
-            {/* 返回按钮 */}
-            <button
-              onClick={handleBack}
-              className="relative group"
-            >
-              <div
-                className="flex items-center justify-center hover:scale-105 active:scale-95 transition-transform"
-                style={{
-                  width: '120px',
-                  height: '58px',
-                  borderRadius: '24px',
-                  border: '2px solid #DAB2FF',
-                }}
-              >
-                <span
-                  className="font-bold"
-                  style={{
-                    fontFamily: 'Source Han Sans CN, sans-serif',
-                    fontSize: '24px',
-                    lineHeight: '20px',
-                    color: '#DAB2FF',
-                  }}
-                >
-                  返回
-                </span>
-              </div>
-            </button>
-            
+          <div className="flex justify-end">
             {/* 生成按钮 */}
             <button
               onClick={handleGenerate}

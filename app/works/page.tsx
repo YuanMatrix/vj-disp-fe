@@ -7,10 +7,12 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { 
   getAllTasks, 
   updateTask, 
-  VideoTask, 
   DEFAULT_THUMBNAIL,
-  formatDateTime 
+  formatDateTime,
+  checkAndHandleTimeoutTasks,
+  getPendingTaskCount,
 } from '@/data/tasks';
+import { generateConfig } from '@/config/generate';
 import { worksData, Work } from '@/data/works';
 
 // 合并的作品类型
@@ -31,6 +33,7 @@ export default function WorksPage() {
   const [selectedWork, setSelectedWork] = useState<string | null>(null);
   const [startIndex, setStartIndex] = useState(0);
   const [works, setWorks] = useState<DisplayWork[]>([]);
+  const [pendingCount, setPendingCount] = useState(0);
   
   const visibleCount = 4; // 每行显示4个
   const rowCount = 2; // 显示2行
@@ -89,23 +92,39 @@ export default function WorksPage() {
 
     // 动态任务在前，静态数据在后
     setWorks([...taskWorks, ...staticWorks]);
+    
+    // 更新队列中的任务数量
+    setPendingCount(getPendingTaskCount());
   }, [convertToProxyUrl]);
 
   // 检查进行中任务的状态
   const checkPendingTasks = useCallback(async () => {
+    // 首先检查并处理超时任务
+    const timeoutTasks = checkAndHandleTimeoutTasks(generateConfig.task.timeoutSeconds);
+    if (timeoutTasks.length > 0) {
+      console.log('Timeout tasks:', timeoutTasks.map(t => t.id));
+    }
+    
     const tasks = getAllTasks();
-    const pendingTasks = tasks.filter(
-      task => task.status === 'processing' || task.status === 'pending'
+    const processingTasks = tasks.filter(
+      task => task.status === 'processing'
     );
 
-    for (const task of pendingTasks) {
+    for (const task of processingTasks) {
       if (!task.generationTaskId) continue;
 
       try {
         const response = await fetch(`/api/comfyui/status/${task.generationTaskId}`);
         const result = await response.json();
 
-        if (!result.success) continue;
+        // 如果返回错误状态码（404、500等）或任务不存在，标记为失败
+        if (!response.ok || !result.success) {
+          updateTask(task.id, {
+            status: 'failed',
+            error: result.error || (response.status === 404 ? '任务不存在或已被删除' : `服务器错误 (${response.status})`),
+          });
+          continue;
+        }
 
         if (result.status === 'completed') {
           const rawVideoPath = result.videoPath || (result.outputFiles?.[0]?.path);
@@ -122,12 +141,11 @@ export default function WorksPage() {
           };
           
           const videoProxyUrl = convertToProxyUrl(rawVideoPath);
-          const thumbnailProxyUrl = videoProxyUrl ? videoProxyUrl.replace('.mp4', '_thumb.png') : DEFAULT_THUMBNAIL;
           
           updateTask(task.id, {
             status: 'completed',
             videoUrl: videoProxyUrl,
-            thumbnail: thumbnailProxyUrl,
+            thumbnail: DEFAULT_THUMBNAIL,
           });
         } else if (result.status === 'failed') {
           updateTask(task.id, {
@@ -144,17 +162,72 @@ export default function WorksPage() {
     loadWorks();
   }, [loadWorks]);
 
+  // 验证并清理无效的 processing 任务（用于前端重启后的状态恢复）
+  const validateAndCleanupTasks = useCallback(async () => {
+    const tasks = getAllTasks();
+    const processingTasks = tasks.filter(t => t.status === 'processing');
+    
+    for (const task of processingTasks) {
+      // 如果没有 generationTaskId，说明任务还没开始就中断了
+      if (!task.generationTaskId) {
+        console.log(`Task ${task.id} has no generationTaskId, marking as failed`);
+        updateTask(task.id, {
+          status: 'failed',
+          error: '任务被中断（服务重启）',
+        });
+        continue;
+      }
+      
+      // 检查 ComfyUI 任务状态
+      try {
+        const response = await fetch(`/api/comfyui/status/${task.generationTaskId}`);
+        const result = await response.json();
+        
+        // 如果返回错误状态码（404、500等）或任务不存在，标记为失败
+        if (!response.ok || !result.success || result.status === 'failed') {
+          console.log(`Task ${task.id} failed in ComfyUI (status: ${response.status}), marking as failed`);
+          updateTask(task.id, {
+            status: 'failed',
+            error: result.error || (response.status === 404 ? '任务不存在或已被删除' : `服务器错误 (${response.status})`),
+          });
+        } else if (result.status === 'completed') {
+          // 如果已完成但状态没更新，更新它
+          const rawVideoPath = result.videoPath || (result.outputFiles?.[0]?.path);
+          const videoProxyUrl = convertToProxyUrl(rawVideoPath);
+          
+          updateTask(task.id, {
+            status: 'completed',
+            videoUrl: videoProxyUrl,
+            thumbnail: DEFAULT_THUMBNAIL,
+          });
+        }
+        // 如果仍在处理中，保持状态不变
+      } catch (error) {
+        console.error(`Error validating task ${task.id}:`, error);
+        // 如果无法连接 ComfyUI，标记为失败
+        updateTask(task.id, {
+          status: 'failed',
+          error: '无法连接到 ComfyUI 服务',
+        });
+      }
+    }
+    
+    // 重新加载数据
+    loadWorks();
+  }, [loadWorks, convertToProxyUrl]);
+
   // 初始加载和定时检查
   useEffect(() => {
-    loadWorks();
+    // 首次加载时验证任务状态
+    validateAndCleanupTasks();
 
-    // 每 5 秒检查一次进行中的任务
+    // 按配置的间隔检查进行中的任务
     const interval = setInterval(() => {
       checkPendingTasks();
-    }, 5000);
+    }, generateConfig.task.pollIntervalMs);
 
     return () => clearInterval(interval);
-  }, [loadWorks, checkPendingTasks]);
+  }, [validateAndCleanupTasks, checkPendingTasks]);
 
   const handlePrev = () => {
     setStartIndex(Math.max(0, startIndex - visibleCount));
@@ -179,8 +252,9 @@ export default function WorksPage() {
   const getStatusText = (status: DisplayWork['status']) => {
     switch (status) {
       case 'processing':
-      case 'pending':
         return '生成中...';
+      case 'pending':
+        return '排队中...';
       case 'failed':
         return '生成失败';
       default:
@@ -192,8 +266,9 @@ export default function WorksPage() {
   const getStatusColor = (status: DisplayWork['status']) => {
     switch (status) {
       case 'processing':
-      case 'pending':
         return '#DAB2FF';
+      case 'pending':
+        return '#888888';
       case 'failed':
         return '#FF6B6B';
       default:
@@ -243,6 +318,11 @@ export default function WorksPage() {
               }}
             >
               左右可切换查看更多作品
+              {pendingCount > 0 && (
+                <span style={{ marginLeft: '16px', color: '#DAB2FF' }}>
+                  · 队列中有 {pendingCount} 个任务等待处理
+                </span>
+              )}
             </p>
           </div>
 
@@ -287,14 +367,24 @@ export default function WorksPage() {
                     overflow: 'hidden',
                   }}
                 >
-                  {/* 作品图片 */}
-                  <div
-                    className="absolute inset-0 bg-cover bg-center"
-                    style={{
-                      backgroundImage: `url(${work.thumbnail})`,
-                      backgroundColor: '#2a2a2a',
-                    }}
-                  />
+                  {/* 作品预览：成功且有视频用 video 预览第一帧，否则用封面图 */}
+                  {work.status === 'completed' && work.videoUrl ? (
+                    <video
+                      className="absolute inset-0 w-full h-full object-cover"
+                      src={work.videoUrl}
+                      muted
+                      preload="metadata"
+                      style={{ backgroundColor: '#2a2a2a' }}
+                    />
+                  ) : (
+                    <div
+                      className="absolute inset-0 bg-cover bg-center"
+                      style={{
+                        backgroundImage: `url(${work.thumbnail || '/images/default-thumbnail.png'})`,
+                        backgroundColor: '#2a2a2a',
+                      }}
+                    />
+                  )}
 
                   {/* 状态遮罩层（进行中/失败） */}
                   {work.status !== 'completed' && (

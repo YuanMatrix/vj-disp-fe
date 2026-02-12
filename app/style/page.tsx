@@ -12,8 +12,8 @@ import {
   VideoTask,
   DEFAULT_THUMBNAIL,
   hasRunningTask,
-  getNextPendingTask,
-  getPendingTaskCount,
+  startNextPendingTask,
+  submitTaskToComfyUI,
 } from '@/data/tasks';
 import { generateConfig } from '@/config/generate';
 
@@ -416,12 +416,11 @@ function StylePageContent() {
     }
   }, []);
 
-  // 检查并启动下一个待处理任务（在当前页面不执行，由 works 页面处理）
-  const checkAndStartNextTask = useCallback(() => {
-    const nextTask = getNextPendingTask();
-    if (nextTask) {
-      console.log('Queue has pending task:', nextTask.id);
-      // 这里不自动启动，让用户在 works 页面查看
+  // 检查并启动下一个排队任务
+  const checkAndStartNextTask = useCallback(async () => {
+    const result = await startNextPendingTask();
+    if (result) {
+      console.log(`[Queue] Next task ${result.task.id} started, generationTaskId: ${result.generationTaskId}`);
     }
   }, []);
 
@@ -504,6 +503,9 @@ function StylePageContent() {
 
           setProgress(100);
           setStatusText('生成完成！');
+          
+          // 启动下一个排队任务
+          checkAndStartNextTask();
           
           setTimeout(() => {
             // 跳转到 generate 页面播放
@@ -658,40 +660,47 @@ function StylePageContent() {
         throw new Error('图片上传失败');
       }
 
-      updateTask(taskId, { images: uploadedImages });
-      setProgress(generateConfig.progress.afterImageUpload);
-
-      // 步骤 3: 启动视频生成
-      setStatusText('正在启动视频生成...');
-      
       // 固定输出尺寸：宽度480，高度300
       const outputWidth = 480;
       const outputHeight = 300;
       
-      const generateResponse = await fetch('/api/comfyui/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          audioPath: uploadedAudioPath,
-          images: uploadedImages,
-          numFrames: Math.round((parseFloat(endTime) - parseFloat(startTime)) * generateConfig.video.fps), // 秒数 * fps
-          width: outputWidth,
-          height: outputHeight,
-          fps: generateConfig.video.fps,
-        }),
-      });
+      // 构建生成参数
+      const generateParams = {
+        audioPath: uploadedAudioPath,
+        images: uploadedImages,
+        numFrames: Math.round((parseFloat(endTime) - parseFloat(startTime)) * generateConfig.video.fps),
+        width: outputWidth,
+        height: outputHeight,
+        fps: generateConfig.video.fps,
+      };
 
-      if (!generateResponse.ok) {
-        const errorData = await generateResponse.json();
-        throw new Error(errorData.error || '生成请求失败');
+      // 保存生成参数到任务（排队时需要）
+      updateTask(taskId, { images: uploadedImages, generateParams });
+      setProgress(generateConfig.progress.afterImageUpload);
+
+      // 步骤 3: 检查是否有正在运行的任务
+      if (hasRunningTask()) {
+        // 有任务在运行，排队等待
+        console.log(`[Queue] Task ${taskId} queued, another task is running`);
+        setProgress(100);
+        setStatusText('已加入队列，等待前面的任务完成...');
+        setTimeout(() => {
+          setIsGenerating(false);
+          // 跳转到 works 页面查看队列
+          router.push('/works');
+        }, 2000);
+        return;
       }
 
-      const generateResult = await generateResponse.json();
-      const generationTaskId = generateResult.taskId;
+      // 没有任务在运行，直接提交到 ComfyUI
+      setStatusText('正在启动视频生成...');
+      
+      const generationTaskId = await submitTaskToComfyUI(taskId);
+      
+      if (!generationTaskId) {
+        throw new Error('提交任务到 ComfyUI 失败');
+      }
 
-      updateTask(taskId, { generationTaskId });
       setProgress(generateConfig.progress.afterGenerateStart);
       setStatusText('正在生成画面...');
 

@@ -11,6 +11,8 @@ import {
   formatDateTime,
   checkAndHandleTimeoutTasks,
   getPendingTaskCount,
+  startNextPendingTask,
+  hasRunningTask,
 } from '@/data/tasks';
 import { generateConfig } from '@/config/generate';
 import { worksData, Work } from '@/data/works';
@@ -159,6 +161,8 @@ export default function WorksPage() {
       task => task.status === 'processing'
     );
 
+    let taskFinished = false; // 标记是否有任务完成或失败
+
     for (const task of processingTasks) {
       if (!task.generationTaskId) continue;
 
@@ -180,6 +184,7 @@ export default function WorksPage() {
             status: 'failed',
             error: errorMsg,
           });
+          taskFinished = true;
           continue;
         }
 
@@ -188,17 +193,6 @@ export default function WorksPage() {
           
           console.log(`[Task ${task.id}] Completed! Raw video path:`, rawVideoPath);
           console.log(`[Task ${task.id}] Output files:`, result.outputFiles);
-          
-          // 将 ComfyUI 绝对路径转换为代理 API URL
-          const convertToProxyUrl = (absolutePath: string) => {
-            if (!absolutePath) return '';
-            const outputIndex = absolutePath.indexOf('/output/');
-            if (outputIndex !== -1) {
-              const relativePath = absolutePath.substring(outputIndex + 8);
-              return `/api/comfyui/output/${relativePath}`;
-            }
-            return absolutePath;
-          };
           
           const videoProxyUrl = convertToProxyUrl(rawVideoPath);
           
@@ -210,6 +204,7 @@ export default function WorksPage() {
               status: 'failed',
               error: '无法解析视频路径',
             });
+            taskFinished = true;
             continue;
           }
           
@@ -218,33 +213,55 @@ export default function WorksPage() {
             videoUrl: videoProxyUrl,
             thumbnail: DEFAULT_THUMBNAIL,
           });
+          taskFinished = true;
         } else if (result.status === 'failed') {
           updateTask(task.id, {
             status: 'failed',
             error: result.error || '生成失败',
           });
+          taskFinished = true;
         }
       } catch (error) {
         console.error('Error checking task status:', error);
       }
     }
 
+    // 如果有超时任务也算任务结束
+    if (timeoutTasks.length > 0) {
+      taskFinished = true;
+    }
+
+    // 如果有任务完成或失败，尝试启动下一个排队任务
+    if (taskFinished) {
+      console.log('[Queue] Task finished, checking for next pending task...');
+      const nextResult = await startNextPendingTask();
+      if (nextResult) {
+        console.log(`[Queue] Started next task: ${nextResult.task.id}, generationTaskId: ${nextResult.generationTaskId}`);
+      }
+    }
+
     // 重新加载数据
     loadWorks();
-  }, [loadWorks]);
+  }, [loadWorks, convertToProxyUrl]);
 
   // 验证并清理无效的任务（用于前端重启后的状态恢复）
   const validateAndCleanupTasks = useCallback(async () => {
     const tasks = getAllTasks();
     
-    // 处理 pending 状态的任务 - 直接标记为失败（没有提交到 ComfyUI）
+    // 处理 pending 状态的任务
     const pendingTasks = tasks.filter(t => t.status === 'pending');
     for (const task of pendingTasks) {
-      console.log(`Task ${task.id} (pending) marked as failed`);
-      updateTask(task.id, {
-        status: 'failed',
-        error: '任务被中断（服务重启）',
-      });
+      if (task.generateParams) {
+        // 有生成参数的 pending 任务保留排队状态（等待自动启动）
+        console.log(`Task ${task.id} (pending) has generateParams, keeping in queue`);
+      } else {
+        // 没有生成参数的 pending 任务标记为失败
+        console.log(`Task ${task.id} (pending) has no generateParams, marking as failed`);
+        updateTask(task.id, {
+          status: 'failed',
+          error: '任务被中断（服务重启）',
+        });
+      }
     }
     
     // 处理 processing 状态的任务 - 检查 ComfyUI 实际状态
@@ -292,6 +309,14 @@ export default function WorksPage() {
           status: 'failed',
           error: '无法连接到 ComfyUI 服务',
         });
+      }
+    }
+
+    // 检查是否需要启动排队任务（没有 processing 任务但有 pending 任务时）
+    if (!hasRunningTask()) {
+      const nextResult = await startNextPendingTask();
+      if (nextResult) {
+        console.log(`[Queue] Auto-started pending task: ${nextResult.task.id}`);
       }
     }
     

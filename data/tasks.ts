@@ -25,6 +25,15 @@ export interface VideoTask {
   endTime?: number;
   comfyuiTaskId?: string;
   generationTaskId?: string;
+  // 生成参数（排队时保存，启动时使用）
+  generateParams?: {
+    audioPath: string;
+    images: string[];
+    numFrames: number;
+    width: number;
+    height: number;
+    fps: number;
+  };
 }
 
 // 本地存储的 key
@@ -210,6 +219,81 @@ export function checkAndHandleTimeoutTasks(timeoutSeconds?: number): VideoTask[]
   }
   
   return timeoutTasks;
+}
+
+/**
+ * 提交任务到 ComfyUI
+ * @returns generationTaskId 或 null（失败时）
+ */
+export async function submitTaskToComfyUI(taskId: string): Promise<string | null> {
+  const task = getTask(taskId);
+  if (!task || !task.generateParams) {
+    console.error(`Task ${taskId} not found or missing generateParams`);
+    return null;
+  }
+
+  try {
+    console.log(`[Queue] Submitting task ${taskId} to ComfyUI...`);
+    
+    const response = await fetch('/api/comfyui/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(task.generateParams),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || '生成请求失败');
+    }
+
+    const result = await response.json();
+    const generationTaskId = result.taskId;
+
+    updateTask(taskId, {
+      status: 'processing',
+      generationTaskId,
+    });
+
+    console.log(`[Queue] Task ${taskId} submitted, generationTaskId: ${generationTaskId}`);
+    return generationTaskId;
+  } catch (error) {
+    console.error(`[Queue] Failed to submit task ${taskId}:`, error);
+    updateTask(taskId, {
+      status: 'failed',
+      error: error instanceof Error ? error.message : '提交任务失败',
+    });
+    return null;
+  }
+}
+
+/**
+ * 启动下一个排队中的任务
+ * @returns 启动的任务和 generationTaskId，或 null
+ */
+export async function startNextPendingTask(): Promise<{ task: VideoTask; generationTaskId: string } | null> {
+  // 检查是否有正在运行的任务
+  if (hasRunningTask()) {
+    console.log('[Queue] Already has a running task, skip');
+    return null;
+  }
+
+  const nextTask = getNextPendingTask();
+  if (!nextTask) {
+    console.log('[Queue] No pending tasks in queue');
+    return null;
+  }
+
+  console.log(`[Queue] Starting next pending task: ${nextTask.id}`);
+  const generationTaskId = await submitTaskToComfyUI(nextTask.id);
+  
+  if (generationTaskId) {
+    // 重新获取更新后的任务
+    const updatedTask = getTask(nextTask.id);
+    return updatedTask ? { task: updatedTask, generationTaskId } : null;
+  }
+
+  // 如果提交失败，递归尝试下一个
+  return startNextPendingTask();
 }
 
 /**

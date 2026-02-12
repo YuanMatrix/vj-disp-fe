@@ -1,0 +1,12 @@
+# Electron 相关文件（添加到 .gitignore）
+
+# Electron 打包产物
+dist/
+out/
+
+# Electron 构建缓存
+electron-builder.yml
+
+# 系统文件
+.DS_Store
+Thumbs.db

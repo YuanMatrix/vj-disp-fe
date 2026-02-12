@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>清理失败任务</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        h1 { color: #4caf50; }
+        .status {
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            background: #2a2a2a;
+        }
+        .success { border-left: 4px solid #4caf50; }
+        .error { border-left: 4px solid #f44336; }
+        .info { border-left: 4px solid #2196f3; }
+        .warning { border-left: 4px solid #ff9800; }
+        button {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover { background: #da190b; }
+        .secondary {
+            background: #2196f3;
+        }
+        .secondary:hover { background: #0b7dda; }
+        .safe {
+            background: #4caf50;
+        }
+        .safe:hover { background: #45a049; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: #2a2a2a;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #444;
+        }
+        th {
+            background: #333;
+            font-weight: bold;
+        }
+        tr:hover {
+            background: #333;
+        }
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .badge-completed { background: #4caf50; color: white; }
+        .badge-processing { background: #2196f3; color: white; }
+        .badge-failed { background: #f44336; color: white; }
+        .badge-pending { background: #ff9800; color: white; }
+        pre {
+            background: #000;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            color: #0f0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🗑️ 任务清理工具</h1>
+    
+    <div class="status info">
+        <h3>📊 任务统计</h3>
+        <p id="stats">加载中...</p>
+    </div>
+    
+    <div style="margin: 20px 0;">
+        <button class="secondary" onclick="loadTasks()">🔄 刷新任务列表</button>
+        <button onclick="clearFailedTasks()">🗑️ 清理所有失败任务</button>
+        <button onclick="clearAllTasks()">⚠️ 清空所有任务</button>
+        <button class="safe" onclick="window.location.href='http://localhost:3000/works'">📂 打开作品页面</button>
+    </div>
+    
+    <div id="taskList"></div>
+    <div id="output"></div>
+
+    <script>
+        function log(message, type = 'info') {
+            const output = document.getElementById('output');
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = `<pre>${message}</pre>`;
+            output.appendChild(div);
+            // 滚动到底部
+            output.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+        
+        function getStatusBadge(status) {
+            const badges = {
+                'completed': '<span class="status-badge badge-completed">✅ 已完成</span>',
+                'processing': '<span class="status-badge badge-processing">🔄 生成中</span>',
+                'failed': '<span class="status-badge badge-failed">❌ 失败</span>',
+                'pending': '<span class="status-badge badge-pending">⏳ 排队中</span>'
+            };
+            return badges[status] || status;
+        }
+        
+        function loadTasks() {
+            try {
+                const tasksJson = localStorage.getItem('video_tasks');
+                if (!tasksJson) {
+                    document.getElementById('stats').innerHTML = '❌ 没有找到任务数据';
+                    document.getElementById('taskList').innerHTML = '';
+                    return;
+                }
+                
+                const tasks = JSON.parse(tasksJson);
+                
+                // 统计
+                const stats = {
+                    total: tasks.length,
+                    completed: tasks.filter(t => t.status === 'completed').length,
+                    processing: tasks.filter(t => t.status === 'processing').length,
+                    failed: tasks.filter(t => t.status === 'failed').length,
+                    pending: tasks.filter(t => t.status === 'pending').length
+                };
+                
+                document.getElementById('stats').innerHTML = `
+                    <strong>总任务数：${stats.total}</strong><br>
+                    ✅ 已完成：${stats.completed} | 
+                    🔄 生成中：${stats.processing} | 
+                    ❌ 失败：${stats.failed} | 
+                    ⏳ 排队中：${stats.pending}
+                `;
+                
+                // 生成表格
+                let html = '<h3>📋 任务列表</h3><table>';
+                html += '<tr><th>#</th><th>标题</th><th>风格</th><th>状态</th><th>创建时间</th><th>错误信息</th><th>操作</th></tr>';
+                
+                tasks.forEach((task, index) => {
+                    const createdDate = new Date(task.createdAt).toLocaleString('zh-CN');
+                    html += `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td>${task.title || '未命名'}</td>
+                            <td>${task.style || '-'}</td>
+                            <td>${getStatusBadge(task.status)}</td>
+                            <td>${createdDate}</td>
+                            <td style="color: #f44336;">${task.error || '-'}</td>
+                            <td>
+                                <button class="secondary" style="padding: 6px 12px; font-size: 14px;" onclick="deleteTask('${task.id}')">删除</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                html += '</table>';
+                document.getElementById('taskList').innerHTML = html;
+                
+            } catch (error) {
+                log(`❌ 错误：${error.message}`, 'error');
+            }
+        }
+        
+        function clearFailedTasks() {
+            if (!confirm('确定要清理所有失败的任务吗？此操作不可撤销！')) {
+                return;
+            }
+            
+            try {
+                const tasksJson = localStorage.getItem('video_tasks');
+                if (!tasksJson) {
+                    log('❌ 没有找到任务数据', 'error');
+                    return;
+                }
+                
+                const tasks = JSON.parse(tasksJson);
+                const beforeCount = tasks.length;
+                const failedCount = tasks.filter(t => t.status === 'failed').length;
+                
+                // 过滤掉失败的任务
+                const filteredTasks = tasks.filter(t => t.status !== 'failed');
+                
+                // 保存
+                localStorage.setItem('video_tasks', JSON.stringify(filteredTasks));
+                
+                log(`✅ 成功清理！\n\n清理前：${beforeCount} 个任务\n清理了：${failedCount} 个失败任务\n剩余：${filteredTasks.length} 个任务`, 'success');
+                
+                // 刷新列表
+                loadTasks();
+                
+            } catch (error) {
+                log(`❌ 错误：${error.message}`, 'error');
+            }
+        }
+        
+        function clearAllTasks() {
+            if (!confirm('⚠️ 警告：确定要清空所有任务吗？此操作不可撤销！')) {
+                return;
+            }
+            
+            if (!confirm('⚠️ 再次确认：这将删除所有任务记录，包括已完成的任务！')) {
+                return;
+            }
+            
+            try {
+                const tasksJson = localStorage.getItem('video_tasks');
+                const tasks = tasksJson ? JSON.parse(tasksJson) : [];
+                const count = tasks.length;
+                
+                localStorage.removeItem('video_tasks');
+                
+                log(`✅ 已清空所有任务！共删除 ${count} 个任务。`, 'success');
+                
+                // 刷新列表
+                loadTasks();
+                
+            } catch (error) {
+                log(`❌ 错误：${error.message}`, 'error');
+            }
+        }
+        
+        function deleteTask(taskId) {
+            if (!confirm('确定要删除这个任务吗？')) {
+                return;
+            }
+            
+            try {
+                const tasksJson = localStorage.getItem('video_tasks');
+                if (!tasksJson) {
+                    log('❌ 没有找到任务数据', 'error');
+                    return;
+                }
+                
+                const tasks = JSON.parse(tasksJson);
+                const task = tasks.find(t => t.id === taskId);
+                
+                if (!task) {
+                    log(`❌ 未找到任务 ID: ${taskId}`, 'error');
+                    return;
+                }
+                
+                // 删除任务
+                const filteredTasks = tasks.filter(t => t.id !== taskId);
+                localStorage.setItem('video_tasks', JSON.stringify(filteredTasks));
+                
+                log(`✅ 已删除任务：${task.title}`, 'success');
+                
+                // 刷新列表
+                loadTasks();
+                
+            } catch (error) {
+                log(`❌ 错误：${error.message}`, 'error');
+            }
+        }
+        
+        // 页面加载时自动加载任务列表
+        window.onload = function() {
+            loadTasks();
+            log('✅ 页面已加载，任务列表已刷新', 'success');
+        };
+    </script>
+</body>
+</html>

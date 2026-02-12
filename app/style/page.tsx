@@ -204,14 +204,24 @@ function StylePageContent() {
           
           // 将 ComfyUI 绝对路径转换为代理 API URL
           // 例如: /Users/coco/coco-code/ComfyUI/output/vj/xxx.mp4 -> /api/comfyui/output/vj/xxx.mp4
+          // 或: C:\Users\...\ComfyUI\output\vj\xxx.mp4 -> /api/comfyui/output/vj/xxx.mp4
           const convertToProxyUrl = (absolutePath: string) => {
             if (!absolutePath) return '';
-            // 提取 output 后面的相对路径
+            
+            // 处理 Unix 路径
             const outputIndex = absolutePath.indexOf('/output/');
             if (outputIndex !== -1) {
               const relativePath = absolutePath.substring(outputIndex + 8); // 8 = '/output/'.length
               return `/api/comfyui/output/${relativePath}`;
             }
+            
+            // 处理 Windows 路径
+            const outputIndexWin = absolutePath.indexOf('\\output\\');
+            if (outputIndexWin !== -1) {
+              const relativePath = absolutePath.substring(outputIndexWin + 8).replace(/\\/g, '/');
+              return `/api/comfyui/output/${relativePath}`;
+            }
+            
             return absolutePath;
           };
           
@@ -270,31 +280,6 @@ function StylePageContent() {
 
   const handleGenerate = async () => {
     if (!selectedStyle) {
-      return;
-    }
-    
-    // 检查是否有正在运行的任务
-    if (hasRunningTask()) {
-      const pendingCount = getPendingTaskCount();
-      setErrorMessage(`当前有任务正在运行中，新任务将加入队列排队。\n队列中已有 ${pendingCount} 个任务等待处理。`);
-      
-      // 创建 pending 状态的任务
-      const taskId = generateTaskId();
-      const newTask: VideoTask = {
-        id: taskId,
-        title: songTitle,
-        style: selectedStyle,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        thumbnail: DEFAULT_THUMBNAIL,
-      };
-      addTask(newTask);
-      
-      // 3秒后跳转到我的作品页面
-      setTimeout(() => {
-        router.push('/works');
-      }, 3000);
       return;
     }
     
@@ -360,36 +345,11 @@ function StylePageContent() {
       const imagesToUpload = styleImages.slice(0, maxCount);
       const uploadedImages: string[] = [];
       
-      // 获取第一张图片的尺寸，用于等比例计算输出尺寸
-      const { maxSize, defaultWidth, defaultHeight } = generateConfig.video;
-      let outputWidth = defaultWidth;
-      let outputHeight = defaultHeight;
+      // 固定输出尺寸：长宽比 1.6:1（高:宽），高度 480
+      const outputHeight = 480;
+      const outputWidth = Math.round(outputHeight / 1.6); // 480 / 1.6 = 300
       
-      if (imagesToUpload.length > 0) {
-        try {
-          const firstImageSize = await new Promise<{ width: number; height: number }>((resolve, reject) => {
-            const img = new Image();
-            img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-            img.onerror = reject;
-            img.src = imagesToUpload[0];
-          });
-          
-          // 等比例缩放，最长边为配置的 maxSize
-          if (firstImageSize.width >= firstImageSize.height) {
-            // 宽度是最长边
-            outputWidth = maxSize;
-            outputHeight = Math.round((firstImageSize.height / firstImageSize.width) * maxSize);
-          } else {
-            // 高度是最长边
-            outputHeight = maxSize;
-            outputWidth = Math.round((firstImageSize.width / firstImageSize.height) * maxSize);
-          }
-          
-          console.log(`Image size: ${firstImageSize.width}x${firstImageSize.height} -> Output: ${outputWidth}x${outputHeight}`);
-        } catch (error) {
-          console.error(`Failed to get image size, using default ${defaultWidth}x${defaultHeight}:`, error);
-        }
-      }
+      console.log(`Output resolution: ${outputWidth}x${outputHeight} (aspect ratio 1.6:1)`);
       
       for (let i = 0; i < imagesToUpload.length; i++) {
         const imagePath = imagesToUpload[i];

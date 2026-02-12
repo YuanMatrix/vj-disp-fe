@@ -40,6 +40,46 @@ export default function WorksPage() {
   const totalVisible = visibleCount * rowCount;
   const maxStartIndex = Math.max(0, works.length - totalVisible);
 
+  // 调试工具：在开发环境下暴露到 window 对象
+  useEffect(() => {
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+      (window as any).debugTasks = () => {
+        const tasks = getAllTasks();
+        console.log(`共有 ${tasks.length} 个任务`);
+        console.table(tasks.map((task: any) => ({
+          id: task.id.substring(0, 20) + '...',
+          title: task.title,
+          status: task.status,
+          comfyuiTaskId: task.comfyuiTaskId || task.generationTaskId || 'N/A',
+          hasVideo: !!task.videoUrl,
+          videoUrl: task.videoUrl?.substring(0, 50) || 'N/A',
+          error: task.error || 'N/A',
+          createdAt: new Date(task.createdAt).toLocaleString('zh-CN'),
+        })));
+        return tasks;
+      };
+      
+      (window as any).checkTaskStatus = async (comfyuiTaskId: string) => {
+        try {
+          console.log(`检查任务状态: ${comfyuiTaskId}`);
+          const response = await fetch(`/api/comfyui/status/${comfyuiTaskId}`);
+          const result = await response.json();
+          
+          console.log('响应状态:', response.status);
+          console.log('响应数据:', result);
+          
+          return result;
+        } catch (error) {
+          console.error('检查失败:', error);
+        }
+      };
+      
+      console.log('✅ 调试工具已加载！');
+      console.log('使用 window.debugTasks() 查看所有任务');
+      console.log('使用 window.checkTaskStatus("任务ID") 检查特定任务状态');
+    }
+  }, []);
+
   // 将 ComfyUI 绝对路径转换为代理 API URL
   const convertToProxyUrl = useCallback((absolutePath: string) => {
     if (!absolutePath) return '';
@@ -47,12 +87,21 @@ export default function WorksPage() {
     if (absolutePath.startsWith('/api/comfyui/output/')) {
       return absolutePath;
     }
-    // 提取 output 后面的相对路径
+    
+    // 处理 Unix 路径: /path/to/ComfyUI/output/xxx
     const outputIndex = absolutePath.indexOf('/output/');
     if (outputIndex !== -1) {
       const relativePath = absolutePath.substring(outputIndex + 8);
       return `/api/comfyui/output/${relativePath}`;
     }
+    
+    // 处理 Windows 路径: C:\path\to\ComfyUI\output\xxx
+    const outputIndexWin = absolutePath.indexOf('\\output\\');
+    if (outputIndexWin !== -1) {
+      const relativePath = absolutePath.substring(outputIndexWin + 8).replace(/\\/g, '/');
+      return `/api/comfyui/output/${relativePath}`;
+    }
+    
     return absolutePath;
   }, []);
 
@@ -117,17 +166,28 @@ export default function WorksPage() {
         const response = await fetch(`/api/comfyui/status/${task.generationTaskId}`);
         const result = await response.json();
 
+        console.log(`[Task ${task.id}] Status check response:`, {
+          ok: response.ok,
+          status: response.status,
+          result,
+        });
+
         // 如果返回错误状态码（404、500等）或任务不存在，标记为失败
         if (!response.ok || !result.success) {
+          const errorMsg = result.error || (response.status === 404 ? '任务不存在或已被删除' : `服务器错误 (${response.status})`);
+          console.error(`[Task ${task.id}] Failed:`, errorMsg);
           updateTask(task.id, {
             status: 'failed',
-            error: result.error || (response.status === 404 ? '任务不存在或已被删除' : `服务器错误 (${response.status})`),
+            error: errorMsg,
           });
           continue;
         }
 
         if (result.status === 'completed') {
           const rawVideoPath = result.videoPath || (result.outputFiles?.[0]?.path);
+          
+          console.log(`[Task ${task.id}] Completed! Raw video path:`, rawVideoPath);
+          console.log(`[Task ${task.id}] Output files:`, result.outputFiles);
           
           // 将 ComfyUI 绝对路径转换为代理 API URL
           const convertToProxyUrl = (absolutePath: string) => {
@@ -141,6 +201,17 @@ export default function WorksPage() {
           };
           
           const videoProxyUrl = convertToProxyUrl(rawVideoPath);
+          
+          console.log(`[Task ${task.id}] Converted video URL:`, videoProxyUrl);
+          
+          if (!videoProxyUrl) {
+            console.error(`[Task ${task.id}] Failed to convert video path, marking as failed`);
+            updateTask(task.id, {
+              status: 'failed',
+              error: '无法解析视频路径',
+            });
+            continue;
+          }
           
           updateTask(task.id, {
             status: 'completed',
@@ -162,59 +233,30 @@ export default function WorksPage() {
     loadWorks();
   }, [loadWorks]);
 
-  // 验证并清理无效的 processing 任务（用于前端重启后的状态恢复）
+  // 验证并清理无效的任务（用于前端重启后的状态恢复）
   const validateAndCleanupTasks = useCallback(async () => {
     const tasks = getAllTasks();
-    const processingTasks = tasks.filter(t => t.status === 'processing');
     
-    for (const task of processingTasks) {
-      // 如果没有 generationTaskId，说明任务还没开始就中断了
-      if (!task.generationTaskId) {
-        console.log(`Task ${task.id} has no generationTaskId, marking as failed`);
-        updateTask(task.id, {
-          status: 'failed',
-          error: '任务被中断（服务重启）',
-        });
-        continue;
-      }
-      
-      // 检查 ComfyUI 任务状态
-      try {
-        const response = await fetch(`/api/comfyui/status/${task.generationTaskId}`);
-        const result = await response.json();
-        
-        // 如果返回错误状态码（404、500等）或任务不存在，标记为失败
-        if (!response.ok || !result.success || result.status === 'failed') {
-          console.log(`Task ${task.id} failed in ComfyUI (status: ${response.status}), marking as failed`);
-          updateTask(task.id, {
-            status: 'failed',
-            error: result.error || (response.status === 404 ? '任务不存在或已被删除' : `服务器错误 (${response.status})`),
-          });
-        } else if (result.status === 'completed') {
-          // 如果已完成但状态没更新，更新它
-          const rawVideoPath = result.videoPath || (result.outputFiles?.[0]?.path);
-          const videoProxyUrl = convertToProxyUrl(rawVideoPath);
-          
-          updateTask(task.id, {
-            status: 'completed',
-            videoUrl: videoProxyUrl,
-            thumbnail: DEFAULT_THUMBNAIL,
-          });
-        }
-        // 如果仍在处理中，保持状态不变
-      } catch (error) {
-        console.error(`Error validating task ${task.id}:`, error);
-        // 如果无法连接 ComfyUI，标记为失败
-        updateTask(task.id, {
-          status: 'failed',
-          error: '无法连接到 ComfyUI 服务',
-        });
-      }
+    // 服务重启后，将所有未完成的任务（processing 和 pending）标记为失败
+    const incompleteTasks = tasks.filter(t => 
+      t.status === 'processing' || t.status === 'pending'
+    );
+    
+    for (const task of incompleteTasks) {
+      console.log(`Task ${task.id} (${task.status}) interrupted by service restart, marking as failed`);
+      updateTask(task.id, {
+        status: 'failed',
+        error: '任务被中断（服务重启）',
+      });
+    }
+    
+    if (incompleteTasks.length > 0) {
+      console.log(`Marked ${incompleteTasks.length} interrupted tasks as failed`);
     }
     
     // 重新加载数据
     loadWorks();
-  }, [loadWorks, convertToProxyUrl]);
+  }, [loadWorks]);
 
   // 初始加载和定时检查
   useEffect(() => {
@@ -296,34 +338,69 @@ export default function WorksPage() {
           }}
         >
           {/* 标题区域 */}
-          <div className="shrink-0" style={{ marginBottom: '20px' }}>
-            <h1
-              className="text-white font-bold"
-              style={{ 
-                fontFamily: 'Source Han Sans CN, sans-serif',
-                fontSize: 'clamp(24px, 2vw, 32px)',
-                lineHeight: '1.4',
-                marginBottom: '6px',
-              }}
-            >
-              我的作品
-            </h1>
-            <p
-              className="font-medium"
-              style={{ 
-                fontFamily: 'Source Han Sans CN, sans-serif',
-                fontSize: 'clamp(14px, 1.2vw, 18px)',
-                lineHeight: '1.4',
-                color: '#929292',
-              }}
-            >
-              左右可切换查看更多作品
-              {pendingCount > 0 && (
-                <span style={{ marginLeft: '16px', color: '#DAB2FF' }}>
-                  · 队列中有 {pendingCount} 个任务等待处理
-                </span>
-              )}
-            </p>
+          <div className="shrink-0 flex items-center justify-between" style={{ marginBottom: '20px' }}>
+            <div>
+              <h1
+                className="text-white font-bold"
+                style={{ 
+                  fontFamily: 'Source Han Sans CN, sans-serif',
+                  fontSize: 'clamp(24px, 2vw, 32px)',
+                  lineHeight: '1.4',
+                  marginBottom: '6px',
+                }}
+              >
+                我的作品
+              </h1>
+              <p
+                className="font-medium"
+                style={{ 
+                  fontFamily: 'Source Han Sans CN, sans-serif',
+                  fontSize: 'clamp(14px, 1.2vw, 18px)',
+                  lineHeight: '1.4',
+                  color: '#929292',
+                }}
+              >
+                左右可切换查看更多作品
+                {pendingCount > 0 && (
+                  <span style={{ marginLeft: '16px', color: '#DAB2FF' }}>
+                    · 队列中有 {pendingCount} 个任务等待处理
+                  </span>
+                )}
+              </p>
+            </div>
+            
+            {/* 调试按钮（仅开发环境显示） */}
+            {process.env.NODE_ENV === 'development' && (
+              <button
+                onClick={() => {
+                  if (typeof window !== 'undefined' && (window as any).debugTasks) {
+                    (window as any).debugTasks();
+                    alert('任务详情已输出到浏览器控制台（按 F12 查看）');
+                  }
+                }}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: '#2a2a2a',
+                  color: '#DAB2FF',
+                  border: '1px solid #DAB2FF',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontFamily: 'Source Han Sans CN, sans-serif',
+                  fontSize: '14px',
+                  transition: 'all 0.2s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#DAB2FF';
+                  e.currentTarget.style.color = '#121212';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#2a2a2a';
+                  e.currentTarget.style.color = '#DAB2FF';
+                }}
+              >
+                🔍 查看任务详情
+              </button>
+            )}
           </div>
 
           {/* 作品展示区域 */}
@@ -393,8 +470,9 @@ export default function WorksPage() {
                       style={{
                         background: 'rgba(0, 0, 0, 0.6)',
                       }}
+                      title={work.error || ''} // 鼠标悬停显示完整错误
                     >
-                      <div className="text-center">
+                      <div className="text-center px-2">
                         {work.status === 'processing' || work.status === 'pending' ? (
                           <div className="animate-spin w-10 h-10 border-4 border-t-transparent rounded-full mx-auto mb-2" style={{ borderColor: '#DAB2FF', borderTopColor: 'transparent' }} />
                         ) : (
@@ -409,6 +487,21 @@ export default function WorksPage() {
                         >
                           {getStatusText(work.status)}
                         </p>
+                        {/* 显示错误详情 */}
+                        {work.status === 'failed' && work.error && (
+                          <p
+                            style={{
+                              fontFamily: 'Source Han Sans CN, sans-serif',
+                              fontSize: '12px',
+                              color: '#ff6b6b',
+                              marginTop: '4px',
+                              maxWidth: '180px',
+                              wordBreak: 'break-word',
+                            }}
+                          >
+                            {work.error}
+                          </p>
+                        )}
                       </div>
                     </div>
                   )}

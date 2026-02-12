@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import { constants } from 'fs';
 
+// 音乐文件存储到 data/music（持久目录，不受 build 影响）
+const MUSIC_DIR = path.join(process.cwd(), 'data', 'music');
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -30,33 +33,32 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    // 确保 public/music 文件夹存在
-    const musicDir = path.join(process.cwd(), 'public', 'music');
+    // 确保 data/music 文件夹存在
     try {
-      await access(musicDir, constants.F_OK);
+      await access(MUSIC_DIR, constants.F_OK);
     } catch {
-      await mkdir(musicDir, { recursive: true });
+      await mkdir(MUSIC_DIR, { recursive: true });
     }
 
     // 处理文件名重名问题
     let finalFileName = fileName;
     const fileBaseName = path.basename(fileName, fileExt);
-    let filePath = path.join(musicDir, finalFileName);
+    let filePath = path.join(MUSIC_DIR, finalFileName);
     
     // 检查文件是否存在，如果存在则添加日期
     try {
       await access(filePath, constants.F_OK);
       // 文件存在，添加日期
       const date = new Date();
-      const dateStr = date.toISOString().split('T')[0].replace(/-/g, ''); // 格式：20260204
-      const timeStr = date.toTimeString().split(' ')[0].replace(/:/g, ''); // 格式：143025
+      const dateStr = date.toISOString().split('T')[0].replace(/-/g, '');
+      const timeStr = date.toTimeString().split(' ')[0].replace(/:/g, '');
       finalFileName = `${fileBaseName}_${dateStr}_${timeStr}${fileExt}`;
-      filePath = path.join(musicDir, finalFileName);
+      filePath = path.join(MUSIC_DIR, finalFileName);
     } catch {
       // 文件不存在，使用原文件名
     }
 
-    // 保存文件到 public/music
+    // 保存文件到 data/music
     await writeFile(filePath, buffer);
     
     return NextResponse.json(

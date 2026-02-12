@@ -17,12 +17,12 @@ export default function UploadSection() {
       title: '彩云追月', 
       artist: '钢琴轻音乐', 
       cover: '/images/music1.png',
-      audioUrl: '/music/demo1.flac',
+      audioUrl: '/api/music/demo1.flac',
       videoUrl: '/videos/demo1.mp4'
     },
-    { id: 2, title: 'Remember', artist: 'Ólafur Arnalds', cover: '/images/music2.png?v=2', audioUrl: '/music/demo2.flac', videoUrl: '/videos/demo2.mp4' },
-    { id: 3, title: '赛博空间', artist: 'cyberpunk', cover: '/images/music3.png', audioUrl: '/music/demo3.mp3', videoUrl: '/videos/demo3.mp4' },
-    { id: 4, title: '动态空间', artist: 'dynamic', cover: '/images/music4.png?v=2', audioUrl: '/music/demo4.mp3', videoUrl: '/videos/demo4.mp4' },
+    { id: 2, title: 'Remember', artist: 'Ólafur Arnalds', cover: '/images/music2.png?v=2', audioUrl: '/api/music/demo2.flac', videoUrl: '/videos/demo2.mp4' },
+    { id: 3, title: '赛博空间', artist: 'cyberpunk', cover: '/images/music3.png', audioUrl: '/api/music/demo3.mp3', videoUrl: '/videos/demo3.mp4' },
+    { id: 4, title: '动态空间', artist: 'dynamic', cover: '/images/music4.png?v=2', audioUrl: '/api/music/demo4.mp3', videoUrl: '/videos/demo4.mp4' },
   ];
 
   const handleUploadClick = () => {

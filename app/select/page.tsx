@@ -51,7 +51,7 @@ function SelectPageContent() {
   const fileName = searchParams.get('file') || 'demo1.flac';
   const songTitle = searchParams.get('title') || fileName.replace(/\.[^/.]+$/, ''); // 歌曲标题
   const videoUrl = searchParams.get('video') || ''; // 视频地址
-  const audioUrl = `/music/${fileName}`;
+  const audioUrl = `/api/music/${encodeURIComponent(fileName)}`;
 
   // 格式化时间显示 (秒 -> m:ss)
   const formatTime = (seconds: number) => {

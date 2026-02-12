@@ -11,9 +11,6 @@ import {
   updateTask, 
   VideoTask,
   DEFAULT_THUMBNAIL,
-  hasRunningTask,
-  startNextPendingTask,
-  submitTaskToComfyUI,
 } from '@/data/tasks';
 import { generateConfig } from '@/config/generate';
 
@@ -46,6 +43,7 @@ function StylePageContent() {
   const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
   const [startIndex, setStartIndex] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [canGoBackground, setCanGoBackground] = useState(false); // 准备完成后才允许后台运行
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState('正在准备...');
@@ -416,14 +414,6 @@ function StylePageContent() {
     }
   }, []);
 
-  // 检查并启动下一个排队任务
-  const checkAndStartNextTask = useCallback(async () => {
-    const result = await startNextPendingTask();
-    if (result) {
-      console.log(`[Queue] Next task ${result.task.id} started, generationTaskId: ${result.generationTaskId}`);
-    }
-  }, []);
-
   // 轮询任务状态
   const pollTaskStatus = useCallback(async (generationTaskId: string, localTaskId: string) => {
     const maxWaitSeconds = generateConfig.task.timeoutSeconds; // 最多等待 1 小时
@@ -436,8 +426,6 @@ function StylePageContent() {
           error: '任务超时（超过1小时）' 
         });
         setIsGenerating(false);
-        // 检查并启动下一个待处理任务
-        checkAndStartNextTask();
         return;
       }
 
@@ -454,7 +442,6 @@ function StylePageContent() {
           });
           setIsGenerating(false);
           setStatusText(`错误: ${errorMsg}`);
-          checkAndStartNextTask();
           return;
         }
 
@@ -504,9 +491,6 @@ function StylePageContent() {
           setProgress(100);
           setStatusText('生成完成！');
           
-          // 启动下一个排队任务
-          checkAndStartNextTask();
-          
           setTimeout(() => {
             // 跳转到 generate 页面播放
             const params = new URLSearchParams();
@@ -522,8 +506,6 @@ function StylePageContent() {
           });
           setIsGenerating(false);
           setStatusText('生成失败');
-          // 检查并启动下一个待处理任务
-          checkAndStartNextTask();
         } else {
           // 继续轮询
           setStatusText(result.status === 'processing' ? '正在生成画面...' : '等待处理...');
@@ -537,7 +519,7 @@ function StylePageContent() {
     };
 
     poll();
-  }, [router, songTitle, videoUrl, checkAndStartNextTask]);
+  }, [router, songTitle, videoUrl]);
 
   const handlePrev = () => {
     setStartIndex(Math.max(0, startIndex - 1));
@@ -556,6 +538,7 @@ function StylePageContent() {
     setEstimatedTime(generateConfig.progress.estimatedTimeSeconds);
     setStatusText('正在准备...');
     setIsGenerating(true);
+    setCanGoBackground(false); // 准备阶段不允许离开
 
     const taskId = generateTaskId();
 
@@ -579,8 +562,8 @@ function StylePageContent() {
       // 步骤 1: 上传音频参数（包含截取信息）
       setStatusText('正在准备音频...');
       
-      // 构建音频文件路径
-      const audioPath = `/music/${fileName}`;
+      // 构建音频文件路径（通过 API 路由访问）
+      const audioPath = `/api/music/${encodeURIComponent(fileName)}`;
       console.log('Audio file path:', audioPath, 'fileName:', fileName);
       
       const startTimeSec = parseFloat(startTime);
@@ -606,7 +589,7 @@ function StylePageContent() {
         throw new Error('音频上传失败');
       }
 
-      updateTask(taskId, { audioPath: uploadedAudioPath, status: 'processing' });
+      updateTask(taskId, { audioPath: uploadedAudioPath });
       setProgress(generateConfig.progress.afterAudioUpload);
 
       // 步骤 2: 获取并上传风格图片
@@ -674,35 +657,31 @@ function StylePageContent() {
         fps: generateConfig.video.fps,
       };
 
-      // 保存生成参数到任务（排队时需要）
-      updateTask(taskId, { images: uploadedImages, generateParams });
+      updateTask(taskId, { images: uploadedImages });
       setProgress(generateConfig.progress.afterImageUpload);
 
-      // 步骤 3: 检查是否有正在运行的任务
-      if (hasRunningTask()) {
-        // 有任务在运行，排队等待
-        console.log(`[Queue] Task ${taskId} queued, another task is running`);
-        setProgress(100);
-        setStatusText('已加入队列，等待前面的任务完成...');
-        setTimeout(() => {
-          setIsGenerating(false);
-          // 跳转到 works 页面查看队列
-          router.push('/works');
-        }, 2000);
-        return;
-      }
-
-      // 没有任务在运行，直接提交到 ComfyUI
+      // 步骤 3: 提交到 ComfyUI
       setStatusText('正在启动视频生成...');
       
-      const generationTaskId = await submitTaskToComfyUI(taskId);
-      
-      if (!generationTaskId) {
-        throw new Error('提交任务到 ComfyUI 失败');
+      const generateResponse = await fetch('/api/comfyui/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(generateParams),
+      });
+
+      if (!generateResponse.ok) {
+        const errorData = await generateResponse.json();
+        throw new Error(errorData.error || '生成请求失败');
       }
+
+      const generateResult = await generateResponse.json();
+      const generationTaskId = generateResult.taskId;
+
+      updateTask(taskId, { status: 'processing', generationTaskId });
 
       setProgress(generateConfig.progress.afterGenerateStart);
       setStatusText('正在生成画面...');
+      setCanGoBackground(true); // 已提交到 ComfyUI，可以后台运行了
 
       // 步骤 4: 轮询任务状态
       pollTaskStatus(generationTaskId, taskId);
@@ -899,29 +878,31 @@ function StylePageContent() {
               预计时间 {estimatedTime} s
             </p>
             
-            {/* 后台运行按钮 */}
-            <button
-              onClick={() => {
-                setIsGenerating(false);
-                router.push('/works');
-              }}
-              className="flex items-center justify-center hover:opacity-80 transition-opacity"
-              style={{
-                padding: '12px 32px',
-                borderRadius: '24px',
-                border: '2px solid #DAB2FF',
-              }}
-            >
-              <span
+            {/* 后台运行按钮 - 准备完成后才显示 */}
+            {canGoBackground && (
+              <button
+                onClick={() => {
+                  setIsGenerating(false);
+                  router.push('/works');
+                }}
+                className="flex items-center justify-center hover:opacity-80 transition-opacity"
                 style={{
-                  fontFamily: 'Source Han Sans CN, sans-serif',
-                  fontSize: '16px',
-                  color: '#DAB2FF',
+                  padding: '12px 32px',
+                  borderRadius: '24px',
+                  border: '2px solid #DAB2FF',
                 }}
               >
-                后台运行，稍后查看
-              </span>
-            </button>
+                <span
+                  style={{
+                    fontFamily: 'Source Han Sans CN, sans-serif',
+                    fontSize: '16px',
+                    color: '#DAB2FF',
+                  }}
+                >
+                  后台运行，稍后查看
+                </span>
+              </button>
+            )}
             
             <p
               className="text-center"

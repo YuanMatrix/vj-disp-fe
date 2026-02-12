@@ -11,8 +11,6 @@ import {
   formatDateTime,
   checkAndHandleTimeoutTasks,
   getPendingTaskCount,
-  startNextPendingTask,
-  hasRunningTask,
 } from '@/data/tasks';
 import { generateConfig } from '@/config/generate';
 import { worksData, Work } from '@/data/works';
@@ -161,8 +159,6 @@ export default function WorksPage() {
       task => task.status === 'processing'
     );
 
-    let taskFinished = false; // 标记是否有任务完成或失败
-
     for (const task of processingTasks) {
       if (!task.generationTaskId) continue;
 
@@ -184,7 +180,6 @@ export default function WorksPage() {
             status: 'failed',
             error: errorMsg,
           });
-          taskFinished = true;
           continue;
         }
 
@@ -204,7 +199,6 @@ export default function WorksPage() {
               status: 'failed',
               error: '无法解析视频路径',
             });
-            taskFinished = true;
             continue;
           }
           
@@ -213,30 +207,14 @@ export default function WorksPage() {
             videoUrl: videoProxyUrl,
             thumbnail: DEFAULT_THUMBNAIL,
           });
-          taskFinished = true;
         } else if (result.status === 'failed') {
           updateTask(task.id, {
             status: 'failed',
             error: result.error || '生成失败',
           });
-          taskFinished = true;
         }
       } catch (error) {
         console.error('Error checking task status:', error);
-      }
-    }
-
-    // 如果有超时任务也算任务结束
-    if (timeoutTasks.length > 0) {
-      taskFinished = true;
-    }
-
-    // 如果有任务完成或失败，尝试启动下一个排队任务
-    if (taskFinished) {
-      console.log('[Queue] Task finished, checking for next pending task...');
-      const nextResult = await startNextPendingTask();
-      if (nextResult) {
-        console.log(`[Queue] Started next task: ${nextResult.task.id}, generationTaskId: ${nextResult.generationTaskId}`);
       }
     }
 
@@ -244,82 +222,42 @@ export default function WorksPage() {
     loadWorks();
   }, [loadWorks, convertToProxyUrl]);
 
-  // 验证并清理无效的任务（用于前端重启后的状态恢复）
+  // 页面加载时：只做状态同步，不主动清理任何任务
   const validateAndCleanupTasks = useCallback(async () => {
     const tasks = getAllTasks();
     
-    // 处理 pending 状态的任务
-    const pendingTasks = tasks.filter(t => t.status === 'pending');
-    for (const task of pendingTasks) {
-      if (task.generateParams) {
-        // 有生成参数的 pending 任务保留排队状态（等待自动启动）
-        console.log(`Task ${task.id} (pending) has generateParams, keeping in queue`);
-      } else {
-        // 没有生成参数的 pending 任务标记为失败
-        console.log(`Task ${task.id} (pending) has no generateParams, marking as failed`);
-        updateTask(task.id, {
-          status: 'failed',
-          error: '任务被中断（服务重启）',
-        });
-      }
-    }
+    // pending 任务不动，保持原样（可能正在上传中或排队中）
     
-    // 处理 processing 状态的任务 - 检查 ComfyUI 实际状态
-    const processingTasks = tasks.filter(t => t.status === 'processing');
+    // processing 任务：有 generationTaskId 的去查 ComfyUI 真实状态
+    const processingTasks = tasks.filter(t => t.status === 'processing' && t.generationTaskId);
     
     for (const task of processingTasks) {
-      // 如果没有 generationTaskId，说明任务还没开始就中断了
-      if (!task.generationTaskId) {
-        console.log(`Task ${task.id} has no generationTaskId, marking as failed`);
-        updateTask(task.id, {
-          status: 'failed',
-          error: '任务被中断（服务重启）',
-        });
-        continue;
-      }
-      
-      // 检查 ComfyUI 任务状态
       try {
         const response = await fetch(`/api/comfyui/status/${task.generationTaskId}`);
         const result = await response.json();
         
-        // 如果返回错误状态码（404、500等）或任务不存在，标记为失败
         if (!response.ok || !result.success || result.status === 'failed') {
-          console.log(`Task ${task.id} failed in ComfyUI (status: ${response.status}), marking as failed`);
+          console.log(`Task ${task.id} failed in ComfyUI, marking as failed`);
           updateTask(task.id, {
             status: 'failed',
             error: result.error || (response.status === 404 ? '任务不存在或已被删除' : `服务器错误 (${response.status})`),
           });
         } else if (result.status === 'completed') {
-          // 如果已完成但状态没更新，更新它
           const rawVideoPath = result.videoPath || (result.outputFiles?.[0]?.path);
           const videoProxyUrl = convertToProxyUrl(rawVideoPath);
-          
           updateTask(task.id, {
             status: 'completed',
             videoUrl: videoProxyUrl,
             thumbnail: DEFAULT_THUMBNAIL,
           });
         }
-        // 如果仍在处理中（processing），保持状态不变
+        // processing 状态保持不变
       } catch (error) {
-        console.error(`Error validating task ${task.id}:`, error);
-        // 如果无法连接 ComfyUI，标记为失败
-        updateTask(task.id, {
-          status: 'failed',
-          error: '无法连接到 ComfyUI 服务',
-        });
+        console.error(`Error checking task ${task.id}:`, error);
+        // 连接失败也不标记失败，等下次轮询再查
       }
     }
 
-    // 检查是否需要启动排队任务（没有 processing 任务但有 pending 任务时）
-    if (!hasRunningTask()) {
-      const nextResult = await startNextPendingTask();
-      if (nextResult) {
-        console.log(`[Queue] Auto-started pending task: ${nextResult.task.id}`);
-      }
-    }
-    
     // 重新加载数据
     loadWorks();
   }, [loadWorks, convertToProxyUrl]);

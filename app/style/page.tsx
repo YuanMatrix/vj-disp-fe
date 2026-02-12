@@ -345,11 +345,11 @@ function StylePageContent() {
       const imagesToUpload = styleImages.slice(0, maxCount);
       const uploadedImages: string[] = [];
       
-      // 固定输出尺寸：长宽比 1.6:1（高:宽），高度 480
-      const outputHeight = 480;
-      const outputWidth = Math.round(outputHeight / 1.6); // 480 / 1.6 = 300
+      // 固定输出尺寸：宽:高 = 1.6:1，宽度 480
+      const outputWidth = 480;
+      const outputHeight = Math.round(outputWidth / 1.6); // 480 / 1.6 = 300
       
-      console.log(`Output resolution: ${outputWidth}x${outputHeight} (aspect ratio 1.6:1)`);
+      console.log(`Output resolution: ${outputWidth}x${outputHeight} (aspect ratio 1.6:1, landscape)`);
       
       for (let i = 0; i < imagesToUpload.length; i++) {
         const imagePath = imagesToUpload[i];

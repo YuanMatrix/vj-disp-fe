@@ -237,26 +237,67 @@ export default function WorksPage() {
   const validateAndCleanupTasks = useCallback(async () => {
     const tasks = getAllTasks();
     
-    // 服务重启后，将所有未完成的任务（processing 和 pending）标记为失败
-    const incompleteTasks = tasks.filter(t => 
-      t.status === 'processing' || t.status === 'pending'
-    );
-    
-    for (const task of incompleteTasks) {
-      console.log(`Task ${task.id} (${task.status}) interrupted by service restart, marking as failed`);
+    // 处理 pending 状态的任务 - 直接标记为失败（没有提交到 ComfyUI）
+    const pendingTasks = tasks.filter(t => t.status === 'pending');
+    for (const task of pendingTasks) {
+      console.log(`Task ${task.id} (pending) marked as failed`);
       updateTask(task.id, {
         status: 'failed',
         error: '任务被中断（服务重启）',
       });
     }
     
-    if (incompleteTasks.length > 0) {
-      console.log(`Marked ${incompleteTasks.length} interrupted tasks as failed`);
+    // 处理 processing 状态的任务 - 检查 ComfyUI 实际状态
+    const processingTasks = tasks.filter(t => t.status === 'processing');
+    
+    for (const task of processingTasks) {
+      // 如果没有 generationTaskId，说明任务还没开始就中断了
+      if (!task.generationTaskId) {
+        console.log(`Task ${task.id} has no generationTaskId, marking as failed`);
+        updateTask(task.id, {
+          status: 'failed',
+          error: '任务被中断（服务重启）',
+        });
+        continue;
+      }
+      
+      // 检查 ComfyUI 任务状态
+      try {
+        const response = await fetch(`/api/comfyui/status/${task.generationTaskId}`);
+        const result = await response.json();
+        
+        // 如果返回错误状态码（404、500等）或任务不存在，标记为失败
+        if (!response.ok || !result.success || result.status === 'failed') {
+          console.log(`Task ${task.id} failed in ComfyUI (status: ${response.status}), marking as failed`);
+          updateTask(task.id, {
+            status: 'failed',
+            error: result.error || (response.status === 404 ? '任务不存在或已被删除' : `服务器错误 (${response.status})`),
+          });
+        } else if (result.status === 'completed') {
+          // 如果已完成但状态没更新，更新它
+          const rawVideoPath = result.videoPath || (result.outputFiles?.[0]?.path);
+          const videoProxyUrl = convertToProxyUrl(rawVideoPath);
+          
+          updateTask(task.id, {
+            status: 'completed',
+            videoUrl: videoProxyUrl,
+            thumbnail: DEFAULT_THUMBNAIL,
+          });
+        }
+        // 如果仍在处理中（processing），保持状态不变
+      } catch (error) {
+        console.error(`Error validating task ${task.id}:`, error);
+        // 如果无法连接 ComfyUI，标记为失败
+        updateTask(task.id, {
+          status: 'failed',
+          error: '无法连接到 ComfyUI 服务',
+        });
+      }
     }
     
     // 重新加载数据
     loadWorks();
-  }, [loadWorks]);
+  }, [loadWorks, convertToProxyUrl]);
 
   // 初始加载和定时检查
   useEffect(() => {

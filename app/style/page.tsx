@@ -149,6 +149,273 @@ function StylePageContent() {
     }
   }, []);
 
+  // 截取音频片段
+  const trimAudio = useCallback(async (
+    audioPath: string,
+    startTime: number,
+    endTime: number
+  ): Promise<Blob> => {
+    try {
+      console.log(`Trimming audio: ${audioPath} from ${startTime}s to ${endTime}s`);
+      
+      // 获取音频文件
+      const response = await fetch(audioPath);
+      const arrayBuffer = await response.arrayBuffer();
+      
+      // 创建音频上下文
+      const audioContext = new (window.AudioContext || (window as typeof window & { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      
+      console.log(`Original audio: ${audioBuffer.duration.toFixed(2)}s, sampleRate: ${audioBuffer.sampleRate}`);
+      
+      // 计算截取的样本范围
+      const sampleRate = audioBuffer.sampleRate;
+      const startSample = Math.floor(startTime * sampleRate);
+      const endSample = Math.floor(endTime * sampleRate);
+      const duration = endSample - startSample;
+      
+      console.log(`Sample range: ${startSample} to ${endSample}, duration: ${duration} samples (${(duration/sampleRate).toFixed(2)}s)`);
+      
+      // 边界检查
+      if (startSample < 0 || endSample > audioBuffer.length || startSample >= endSample) {
+        throw new Error(`无效的截取范围: ${startTime}s - ${endTime}s`);
+      }
+      
+      // 创建新的音频缓冲区
+      const trimmedBuffer = audioContext.createBuffer(
+        audioBuffer.numberOfChannels,
+        duration,
+        sampleRate
+      );
+      
+      // 复制音频数据
+      for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+        const sourceData = audioBuffer.getChannelData(channel);
+        const targetData = trimmedBuffer.getChannelData(channel);
+        for (let i = 0; i < duration; i++) {
+          targetData[i] = sourceData[startSample + i];
+        }
+      }
+      
+      console.log(`Trimmed buffer created: ${trimmedBuffer.duration.toFixed(2)}s`);
+      
+      // 将音频缓冲区转换为 WAV Blob
+      const wavBlob = await audioBufferToWav(trimmedBuffer);
+      
+      console.log(`Audio trimmed successfully: ${wavBlob.size} bytes`);
+      return wavBlob;
+      
+    } catch (error) {
+      console.error('Error trimming audio:', error);
+      throw error;
+    }
+  }, []);
+
+  // 将 AudioBuffer 转换为 WAV Blob
+  const audioBufferToWav = useCallback((buffer: AudioBuffer): Promise<Blob> => {
+    return new Promise((resolve) => {
+      const numberOfChannels = buffer.numberOfChannels;
+      const sampleRate = buffer.sampleRate;
+      const format = 1; // PCM
+      const bitDepth = 16;
+      
+      const bytesPerSample = bitDepth / 8;
+      const blockAlign = numberOfChannels * bytesPerSample;
+      
+      const data = [];
+      for (let i = 0; i < buffer.length; i++) {
+        for (let channel = 0; channel < numberOfChannels; channel++) {
+          const sample = buffer.getChannelData(channel)[i];
+          const int16 = Math.max(-1, Math.min(1, sample)) * 0x7FFF;
+          data.push(int16 < 0 ? int16 + 0x10000 : int16);
+        }
+      }
+      
+      const dataLength = data.length * bytesPerSample;
+      const arrayBuffer = new ArrayBuffer(44 + dataLength);
+      const view = new DataView(arrayBuffer);
+      
+      // WAV 文件头
+      const writeString = (offset: number, string: string) => {
+        for (let i = 0; i < string.length; i++) {
+          view.setUint8(offset + i, string.charCodeAt(i));
+        }
+      };
+      
+      writeString(0, 'RIFF');
+      view.setUint32(4, 36 + dataLength, true);
+      writeString(8, 'WAVE');
+      writeString(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, format, true);
+      view.setUint16(22, numberOfChannels, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * blockAlign, true);
+      view.setUint16(32, blockAlign, true);
+      view.setUint16(34, bitDepth, true);
+      writeString(36, 'data');
+      view.setUint32(40, dataLength, true);
+      
+      // 写入音频数据
+      let offset = 44;
+      for (let i = 0; i < data.length; i++) {
+        view.setInt16(offset, data[i], true);
+        offset += 2;
+      }
+      
+      resolve(new Blob([arrayBuffer], { type: 'audio/wav' }));
+    });
+  }, []);
+
+  // 上传 Blob 到 ComfyUI
+  const uploadAudioBlob = useCallback(async (
+    blob: Blob,
+    taskId: string
+  ): Promise<string | null> => {
+    try {
+      const fileName = `trimmed_${taskId}.wav`;
+      const file = new File([blob], fileName, { type: 'audio/wav' });
+
+      console.log(`Uploading trimmed audio: ${fileName}, size: ${file.size}`);
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('taskId', taskId);
+      formData.append('fileType', 'audio');
+
+      const uploadResponse = await fetch('/api/comfyui/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await uploadResponse.json();
+      
+      if (!uploadResponse.ok) {
+        throw new Error(result.error || `上传失败 (HTTP ${uploadResponse.status})`);
+      }
+
+      return result.relativePath;
+    } catch (error) {
+      console.error('Error uploading audio blob:', error);
+      throw error;
+    }
+  }, []);
+
+  // 处理图片：缩放并裁剪到 480x300（宽x高）
+  // 1. 按覆盖策略缩放，确保宽>=480且高>=300
+  // 2. 居中裁剪到 480x300
+  const processImage = useCallback(async (
+    imagePath: string,
+    targetWidth: number,   // 目标宽度 480
+    targetHeight: number   // 目标高度 300
+  ): Promise<Blob> => {
+    try {
+      console.log(`Processing image: ${imagePath}`);
+      
+      // 加载图片
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const image = new Image();
+        image.crossOrigin = 'anonymous';
+        image.onload = () => resolve(image);
+        image.onerror = reject;
+        image.src = imagePath;
+      });
+      
+      console.log(`Original size: ${img.width}x${img.height} (宽x高)`);
+      
+      // 步骤1：覆盖缩放 - 取较大的缩放比，确保两个方向都够大
+      const scale = Math.max(targetWidth / img.width, targetHeight / img.height);
+      const scaledWidth = Math.round(img.width * scale);
+      const scaledHeight = Math.round(img.height * scale);
+      
+      console.log(`Step1 覆盖缩放 (scale=${scale.toFixed(4)}): ${scaledWidth}x${scaledHeight} (宽x高)`);
+      
+      // 创建 canvas 进行缩放
+      const scaleCanvas = document.createElement('canvas');
+      scaleCanvas.width = scaledWidth;
+      scaleCanvas.height = scaledHeight;
+      const scaleCtx = scaleCanvas.getContext('2d');
+      
+      if (!scaleCtx) {
+        throw new Error('无法创建 canvas context');
+      }
+      
+      scaleCtx.drawImage(img, 0, 0, scaledWidth, scaledHeight);
+      
+      // 步骤2：居中裁剪到目标尺寸 480x300
+      const cropX = Math.max(0, Math.floor((scaledWidth - targetWidth) / 2));
+      const cropY = Math.max(0, Math.floor((scaledHeight - targetHeight) / 2));
+      
+      console.log(`Step2 居中裁剪到 ${targetWidth}x${targetHeight}: cropX=${cropX}, cropY=${cropY}`);
+      
+      // 创建最终的 canvas
+      const finalCanvas = document.createElement('canvas');
+      finalCanvas.width = targetWidth;
+      finalCanvas.height = targetHeight;
+      const finalCtx = finalCanvas.getContext('2d');
+      
+      if (!finalCtx) {
+        throw new Error('无法创建最终 canvas context');
+      }
+      
+      finalCtx.drawImage(
+        scaleCanvas,
+        cropX, cropY, targetWidth, targetHeight,
+        0, 0, targetWidth, targetHeight
+      );
+      
+      // 转换为 Blob
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        finalCanvas.toBlob((b) => {
+          if (b) resolve(b);
+          else reject(new Error('无法转换为 Blob'));
+        }, 'image/jpeg', 0.95);
+      });
+      
+      console.log(`最终图片: ${targetWidth}x${targetHeight} (宽x高), ${blob.size} bytes`);
+      return blob;
+      
+    } catch (error) {
+      console.error('Error processing image:', error);
+      throw error;
+    }
+  }, []);
+
+  // 上传处理后的图片 Blob
+  const uploadImageBlob = useCallback(async (
+    blob: Blob,
+    taskId: string,
+    index: number
+  ): Promise<string | null> => {
+    try {
+      const fileName = `processed_${taskId}_${index}.jpg`;
+      const file = new File([blob], fileName, { type: 'image/jpeg' });
+
+      console.log(`Uploading processed image: ${fileName}, size: ${file.size}`);
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('taskId', taskId);
+      formData.append('fileType', 'image');
+
+      const uploadResponse = await fetch('/api/comfyui/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await uploadResponse.json();
+      
+      if (!uploadResponse.ok) {
+        throw new Error(result.error || `上传失败 (HTTP ${uploadResponse.status})`);
+      }
+
+      return result.relativePath;
+    } catch (error) {
+      console.error('Error uploading image blob:', error);
+      throw error;
+    }
+  }, []);
+
   // 检查并启动下一个待处理任务（在当前页面不执行，由 works 页面处理）
   const checkAndStartNextTask = useCallback(() => {
     const nextTask = getNextPendingTask();
@@ -307,11 +574,31 @@ function StylePageContent() {
       setStatusText('正在上传音频...');
       setProgress(5);
       
+      // 步骤 1: 上传音频参数（包含截取信息）
+      setStatusText('正在准备音频...');
+      
       // 构建音频文件路径
       const audioPath = `/music/${fileName}`;
       console.log('Audio file path:', audioPath, 'fileName:', fileName);
       
-      const uploadedAudioPath = await uploadFile(audioPath, taskId, 'audio');
+      const startTimeSec = parseFloat(startTime);
+      const endTimeSec = parseFloat(endTime);
+      
+      console.log('========== 音频截取参数 ==========');
+      console.log('开始时间 (startTime):', startTimeSec, '秒');
+      console.log('结束时间 (endTime):', endTimeSec, '秒');
+      console.log('片段时长:', endTimeSec - startTimeSec, '秒');
+      console.log('================================');
+      
+      setStatusText('正在截取音频...');
+      
+      // 截取音频
+      const audioBlob = await trimAudio(audioPath, startTimeSec, endTimeSec);
+      
+      setStatusText('正在上传音频...');
+      
+      // 上传截取后的音频
+      const uploadedAudioPath = await uploadAudioBlob(audioBlob, taskId);
       
       if (!uploadedAudioPath) {
         throw new Error('音频上传失败');
@@ -339,21 +626,27 @@ function StylePageContent() {
         return;
       }
 
-      setStatusText('正在上传风格图片...');
+      setStatusText('正在处理风格图片...');
       
       // 上传图片（根据配置限制数量）
       const imagesToUpload = styleImages.slice(0, maxCount);
       const uploadedImages: string[] = [];
       
-      // 固定输出尺寸：宽:高 = 1.6:1，宽度 480
-      const outputWidth = 480;
-      const outputHeight = Math.round(outputWidth / 1.6); // 480 / 1.6 = 300
+      // 图片处理参数：裁剪到 480x300（宽x高）
+      const imgTargetWidth = 480;
+      const imgTargetHeight = 300;
       
-      console.log(`Output resolution: ${outputWidth}x${outputHeight} (aspect ratio 1.6:1, landscape)`);
+      console.log(`Processing images: target ${imgTargetWidth}x${imgTargetHeight} (宽x高)`);
       
       for (let i = 0; i < imagesToUpload.length; i++) {
         const imagePath = imagesToUpload[i];
-        const uploadedPath = await uploadFile(imagePath, taskId, 'image');
+        
+        // 处理图片
+        setStatusText(`正在处理图片 ${i + 1}/${imagesToUpload.length}...`);
+        const processedBlob = await processImage(imagePath, imgTargetWidth, imgTargetHeight);
+        
+        // 上传处理后的图片
+        const uploadedPath = await uploadImageBlob(processedBlob, taskId, i);
         if (uploadedPath) {
           uploadedImages.push(uploadedPath);
         }
@@ -370,6 +663,10 @@ function StylePageContent() {
 
       // 步骤 3: 启动视频生成
       setStatusText('正在启动视频生成...');
+      
+      // 固定输出尺寸：宽度480，高度300
+      const outputWidth = 480;
+      const outputHeight = 300;
       
       const generateResponse = await fetch('/api/comfyui/generate', {
         method: 'POST',

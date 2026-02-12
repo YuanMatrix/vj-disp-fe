@@ -904,17 +904,19 @@ function StylePageContent() {
               </button>
             )}
             
-            <p
-              className="text-center"
-              style={{
-                fontFamily: 'Source Han Sans CN, sans-serif',
-                fontSize: '14px',
-                color: '#666',
-                marginTop: '12px',
-              }}
-            >
-              任务将继续在后台运行，可在「我的作品」中查看进度
-            </p>
+            {canGoBackground && (
+              <p
+                className="text-center"
+                style={{
+                  fontFamily: 'Source Han Sans CN, sans-serif',
+                  fontSize: '14px',
+                  color: '#666',
+                  marginTop: '12px',
+                }}
+              >
+                任务将继续在后台运行，可在「我的作品」中查看进度
+              </p>
+            )}
           </div>
         </div>
       )}

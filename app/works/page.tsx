@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { 
   getAllTasks, 
   updateTask, 
+  deleteTask,
   DEFAULT_THUMBNAIL,
   formatDateTime,
   checkAndHandleTimeoutTasks,
@@ -505,6 +506,26 @@ export default function WorksPage() {
                           >
                             {work.error}
                           </p>
+                        )}
+                        {/* 删除按钮 - 仅失败任务显示 */}
+                        {work.status === 'failed' && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteTask(work.id);
+                              loadWorks();
+                            }}
+                            className="mt-3 px-4 py-1 rounded-full hover:opacity-80 transition-opacity"
+                            style={{
+                              background: 'rgba(255, 107, 107, 0.3)',
+                              border: '1px solid rgba(255, 107, 107, 0.5)',
+                              fontFamily: 'Source Han Sans CN, sans-serif',
+                              fontSize: '12px',
+                              color: '#ff6b6b',
+                            }}
+                          >
+                            删除
+                          </button>
                         )}
                       </div>
                     </div>

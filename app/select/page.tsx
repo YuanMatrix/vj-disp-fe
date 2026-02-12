@@ -162,6 +162,108 @@ function SelectPageContent() {
     }
   };
 
+  // 处理时间输入框变更，统一验证和重算时长
+  const handleTimeInputChange = (
+    field: 'startMinute' | 'startSecond' | 'endMinute' | 'endSecond',
+    value: string
+  ) => {
+    // 只允许数字输入
+    if (value !== '' && !/^\d{0,2}$/.test(value)) return;
+
+    // 计算新的开始/结束总秒数
+    const newStartMin = field === 'startMinute' ? (value === '' ? 0 : parseInt(value)) : parseInt(startMinute);
+    const newStartSec = field === 'startSecond' ? (value === '' ? 0 : parseInt(value)) : parseInt(startSecond);
+    const newEndMin = field === 'endMinute' ? (value === '' ? 0 : parseInt(value)) : parseInt(endMinute);
+    const newEndSec = field === 'endSecond' ? (value === '' ? 0 : parseInt(value)) : parseInt(endSecond);
+
+    const newStartTotal = newStartMin * 60 + newStartSec;
+    const newEndTotal = newEndMin * 60 + newEndSec;
+
+    // 秒数不能超过 59
+    if ((field === 'startSecond' || field === 'endSecond') && (value !== '' && parseInt(value) > 59)) {
+      return;
+    }
+
+    // 如果输入完成（2位数字），进行完整校验
+    if (value.length === 2 || value === '') {
+      // 结束时间不能超过歌曲总时长
+      if (totalDuration > 0 && newEndTotal > Math.floor(totalDuration)) {
+        showError('结束时间不能超过歌曲总时长');
+        return;
+      }
+
+      // 开始时间不能大于等于结束时间
+      if (newStartTotal >= newEndTotal) {
+        showError('开始时间不能大于或等于结束时间');
+        return;
+      }
+
+      // 选区时长不能超过最大时长
+      const newDuration = newEndTotal - newStartTotal;
+      if (newDuration > MAX_DURATION) {
+        showError(`选区时长不能超过${MAX_DURATION}秒`);
+        return;
+      }
+
+      // 校验通过，更新时长
+      setDuration(newDuration);
+    }
+
+    // 更新对应的输入框值
+    switch (field) {
+      case 'startMinute': setStartMinute(value); break;
+      case 'startSecond': setStartSecond(value); break;
+      case 'endMinute': setEndMinute(value); break;
+      case 'endSecond': setEndSecond(value); break;
+    }
+  };
+
+  // 输入框失焦时，补零并做最终校验
+  const handleTimeInputBlur = (
+    field: 'startMinute' | 'startSecond' | 'endMinute' | 'endSecond'
+  ) => {
+    // 获取当前值并补零
+    const padValue = (val: string) => {
+      const num = val === '' ? 0 : parseInt(val);
+      return String(isNaN(num) ? 0 : num).padStart(2, '0');
+    };
+
+    let sm = field === 'startMinute' ? padValue(startMinute) : startMinute;
+    let ss = field === 'startSecond' ? padValue(startSecond) : startSecond;
+    let em = field === 'endMinute' ? padValue(endMinute) : endMinute;
+    let es = field === 'endSecond' ? padValue(endSecond) : endSecond;
+
+    const newStartTotal = parseInt(sm) * 60 + parseInt(ss);
+    const newEndTotal = parseInt(em) * 60 + parseInt(es);
+    const newDuration = newEndTotal - newStartTotal;
+
+    // 如果不合法，恢复为修改前的合法值
+    if (newStartTotal >= newEndTotal || newDuration > MAX_DURATION || (totalDuration > 0 && newEndTotal > Math.floor(totalDuration))) {
+      // 恢复到当前 duration 对应的合法状态（不修改任何值）
+      showError('时间输入不合法，已恢复');
+      // 用当前合法的 startTimeInSeconds/endTimeInSeconds 恢复
+      const curStart = parseInt(startMinute) * 60 + parseInt(startSecond);
+      const curEnd = parseInt(endMinute) * 60 + parseInt(endSecond);
+      const curDuration = curEnd - curStart;
+      
+      if (curDuration > 0 && curDuration <= MAX_DURATION) {
+        // 当前状态本身合法，只需补零
+        setStartMinute(String(Math.floor(curStart / 60)).padStart(2, '0'));
+        setStartSecond(String(curStart % 60).padStart(2, '0'));
+        setEndMinute(String(Math.floor(curEnd / 60)).padStart(2, '0'));
+        setEndSecond(String(curEnd % 60).padStart(2, '0'));
+      }
+      return;
+    }
+
+    // 合法，补零并更新
+    setStartMinute(sm);
+    setStartSecond(ss);
+    setEndMinute(em);
+    setEndSecond(es);
+    setDuration(newDuration);
+  };
+
   const adjustStartTime = (seconds: number) => {
     let newStartTotal = parseInt(startMinute) * 60 + parseInt(startSecond) + seconds;
     const endTotal = parseInt(endMinute) * 60 + parseInt(endSecond);
@@ -587,7 +689,8 @@ function SelectPageContent() {
                 <input
                   type="text"
                   value={startMinute}
-                  onChange={(e) => setStartMinute(e.target.value)}
+                  onChange={(e) => handleTimeInputChange('startMinute', e.target.value)}
+                  onBlur={() => handleTimeInputBlur('startMinute')}
                   className="w-[60px] h-[35px] bg-white text-center"
                   style={{
                     fontFamily: 'Source Han Sans CN, sans-serif',
@@ -611,7 +714,8 @@ function SelectPageContent() {
                 <input
                   type="text"
                   value={startSecond}
-                  onChange={(e) => setStartSecond(e.target.value)}
+                  onChange={(e) => handleTimeInputChange('startSecond', e.target.value)}
+                  onBlur={() => handleTimeInputBlur('startSecond')}
                   className="w-[60px] h-[35px] bg-white text-center"
                   style={{
                     fontFamily: 'Source Han Sans CN, sans-serif',
@@ -640,7 +744,8 @@ function SelectPageContent() {
                 <input
                   type="text"
                   value={endMinute}
-                  onChange={(e) => setEndMinute(e.target.value)}
+                  onChange={(e) => handleTimeInputChange('endMinute', e.target.value)}
+                  onBlur={() => handleTimeInputBlur('endMinute')}
                   className="w-[60px] h-[35px] bg-white text-center"
                   style={{
                     fontFamily: 'Source Han Sans CN, sans-serif',
@@ -664,7 +769,8 @@ function SelectPageContent() {
                 <input
                   type="text"
                   value={endSecond}
-                  onChange={(e) => setEndSecond(e.target.value)}
+                  onChange={(e) => handleTimeInputChange('endSecond', e.target.value)}
+                  onBlur={() => handleTimeInputBlur('endSecond')}
                   className="w-[60px] h-[35px] bg-white text-center"
                   style={{
                     fontFamily: 'Source Han Sans CN, sans-serif',

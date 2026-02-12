@@ -46,6 +46,7 @@ function SelectPageContent() {
   const [hasInitialized, setHasInitialized] = useState(!!savedStart); // 是否已有保存的时间
   
   const MAX_DURATION = 60; // 最大选区时长（秒）
+  const DEFAULT_DURATION = 30; // 默认选区时长（秒）
   const WAVEFORM_BARS = 80; // 波形条数量
   
   const fileName = searchParams.get('file') || 'demo1.flac';
@@ -122,7 +123,7 @@ function SelectPageContent() {
         
         // 只有在没有保存的时间时，才设置默认选区为歌曲中间的30秒（或更短）
         if (!hasInitialized) {
-          const selectDuration = Math.min(MAX_DURATION, audioDuration);
+          const selectDuration = Math.min(DEFAULT_DURATION, audioDuration);
           const startTime = Math.floor((audioDuration - selectDuration) / 2);
           const endTime = startTime + selectDuration;
           

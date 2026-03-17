@@ -617,9 +617,9 @@ function StylePageContent() {
       const imagesToUpload = styleImages.slice(0, maxCount);
       const uploadedImages: string[] = [];
       
-      // 图片处理参数：裁剪到 480x300（宽x高）
-      const imgTargetWidth = 480;
-      const imgTargetHeight = 300;
+      // 图片处理参数：从配置读取目标尺寸（宽x高）
+      const imgTargetWidth = generateConfig.video.width;
+      const imgTargetHeight = generateConfig.video.height;
       
       console.log(`Processing images: target ${imgTargetWidth}x${imgTargetHeight} (宽x高)`);
       
@@ -643,9 +643,9 @@ function StylePageContent() {
         throw new Error('图片上传失败');
       }
 
-      // 固定输出尺寸：宽度480，高度300
-      const outputWidth = 480;
-      const outputHeight = 300;
+      // 输出尺寸：从配置读取，必须与图片裁剪尺寸一致
+      const outputWidth = generateConfig.video.width;
+      const outputHeight = generateConfig.video.height;
       
       // 构建生成参数
       const generateParams = {

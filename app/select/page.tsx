@@ -45,7 +45,7 @@ function SelectPageContent() {
   const waveformRef = useRef<HTMLDivElement>(null); // 波形容器引用
   const [hasInitialized, setHasInitialized] = useState(!!savedStart); // 是否已有保存的时间
   
-  const MAX_DURATION = 60; // 最大选区时长（秒）
+  const MAX_DURATION = 600; // 最大选区时长（秒）
   const DEFAULT_DURATION = 30; // 默认选区时长（秒）
   const WAVEFORM_BARS = 80; // 波形条数量
   

@@ -618,8 +618,8 @@ function StylePageContent() {
       const uploadedImages: string[] = [];
       
       // 图片处理参数：从配置读取目标尺寸（宽x高）
-      const imgTargetWidth = generateConfig.video.width;
-      const imgTargetHeight = generateConfig.video.height;
+      const imgTargetWidth = generateConfig.video.defaultWidth;
+      const imgTargetHeight = generateConfig.video.defaultHeight;
       
       console.log(`Processing images: target ${imgTargetWidth}x${imgTargetHeight} (宽x高)`);
       
@@ -644,8 +644,8 @@ function StylePageContent() {
       }
 
       // 输出尺寸：从配置读取，必须与图片裁剪尺寸一致
-      const outputWidth = generateConfig.video.width;
-      const outputHeight = generateConfig.video.height;
+      const outputWidth = generateConfig.video.defaultWidth;
+      const outputHeight = generateConfig.video.defaultHeight;
       
       // 构建生成参数
       const generateParams = {

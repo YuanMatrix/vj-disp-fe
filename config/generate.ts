@@ -6,14 +6,10 @@
 export const generateConfig = {
   // 视频输出尺寸配置
   video: {
-    // 输出视频宽度（px）- 同时也是上传图片的裁剪宽度，两者必须保持一致
-    width: 480,
-
-    // 输出视频高度（px）- 同时也是上传图片的裁剪高度，两者必须保持一致
-    height: 300,
-
-    // 帧率 (fps)
-    fps: 16,
+    maxSize: 1024,          // 视频最长边（px）
+    defaultWidth: 1024,     // 默认宽度
+    defaultHeight: 1024,    // 默认高度
+    fps: 16,                // 帧率
   },
   
   // 风格图片数量限制

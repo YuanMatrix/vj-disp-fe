@@ -24,7 +24,7 @@ export const generateConfig = {
   // 任务相关配置
   task: {
     // 任务超时时间（秒）- 超过此时间任务会被标记为失败
-    timeoutSeconds: 3600, // 1小时
+    timeoutSeconds: 36000, // 10小时
     
     // 轮询间隔（毫秒）
     pollIntervalMs: 5000, // 5秒

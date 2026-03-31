@@ -6,8 +6,4 @@ if not exist "node_modules\" (
     call npm install
 )
 
-if not exist ".next\" (
-    call npm run build
-)
-
 call npm run start

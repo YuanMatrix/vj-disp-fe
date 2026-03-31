@@ -16,12 +16,10 @@ if not exist "node_modules\" (
     echo.
 )
 
-REM 检查是否已构建
-if not exist ".next\" (
-    echo 正在构建项目...
-    call npm run build
-    echo.
-)
+REM 每次启动都重新构建
+echo 正在构建项目...
+call npm run build
+echo.
 
 echo 启动成功！
 echo.

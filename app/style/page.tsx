@@ -49,6 +49,9 @@ function StylePageContent() {
   const [statusText, setStatusText] = useState('正在准备...');
   const [estimatedTime, setEstimatedTime] = useState(generateConfig.progress.estimatedTimeSeconds);
   const [errorMessage, setErrorMessage] = useState<string | null>(null); // 错误弹窗
+  const [showWidthModal, setShowWidthModal] = useState(false); // 宽度设置弹窗
+  const [widthInput, setWidthInput] = useState(String(generateConfig.video.defaultWidth)); // 输入框文本
+  const [generationWidth, setGenerationWidth] = useState(generateConfig.video.defaultWidth); // 生成宽度
   
   const visibleCount = 4; // 一次显示4个风格
   const maxStartIndex = Math.max(0, styles.length - visibleCount);
@@ -529,7 +532,7 @@ function StylePageContent() {
     setStartIndex(Math.min(maxStartIndex, startIndex + 1));
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (overrideWidth?: number) => {
     if (!selectedStyle) {
       return;
     }
@@ -617,9 +620,12 @@ function StylePageContent() {
       const imagesToUpload = styleImages.slice(0, maxCount);
       const uploadedImages: string[] = [];
       
-      // 图片处理参数：从配置读取目标尺寸（宽x高）
-      const imgTargetWidth = generateConfig.video.defaultWidth;
-      const imgTargetHeight = generateConfig.video.defaultHeight;
+      // 图片处理参数：使用用户设定的宽度，高度按比例计算
+      const resolvedWidth = overrideWidth ?? generationWidth;
+      const imgTargetWidth = resolvedWidth;
+      const imgTargetHeight = Math.round(
+        resolvedWidth * generateConfig.video.defaultHeight / generateConfig.video.defaultWidth
+      );
       
       console.log(`Processing images: target ${imgTargetWidth}x${imgTargetHeight} (宽x高)`);
       
@@ -643,9 +649,9 @@ function StylePageContent() {
         throw new Error('图片上传失败');
       }
 
-      // 输出尺寸：从配置读取，必须与图片裁剪尺寸一致
-      const outputWidth = generateConfig.video.defaultWidth;
-      const outputHeight = generateConfig.video.defaultHeight;
+      // 输出尺寸：与图片裁剪尺寸一致
+      const outputWidth = imgTargetWidth;
+      const outputHeight = imgTargetHeight;
       
       // 构建生成参数
       const generateParams = {
@@ -722,6 +728,151 @@ function StylePageContent() {
     <main className="min-h-screen bg-[#121212] overflow-x-hidden">
       <Header />
       
+      {/* 生成宽度设置弹窗 */}
+      {showWidthModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70">
+          <div
+            style={{
+              width: '698.4px',
+              background: '#141414',
+              borderRadius: '16px',
+              padding: '60px 80px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '40px',
+            }}
+          >
+            {/* 宽度输入行 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <span
+                style={{
+                  fontFamily: 'Source Han Sans CN, sans-serif',
+                  fontSize: '20px',
+                  color: '#FFFFFF',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                生成宽度：
+              </span>
+              <input
+                type="number"
+                min={100}
+                max={2048}
+                value={widthInput}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setWidthInput(raw);
+                }}
+                onBlur={() => {
+                  const w = parseInt(widthInput, 10);
+                  if (isNaN(w) || w < 100) setWidthInput('100');
+                  else if (w > 2048) setWidthInput('2048');
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const w = Math.min(2048, Math.max(100, parseInt(widthInput, 10) || 100));
+                    setWidthInput(String(w));
+                    setGenerationWidth(w);
+                    setShowWidthModal(false);
+                    handleGenerate(w);
+                  }
+                }}
+                style={{
+                  width: '220px',
+                  height: '52px',
+                  background: 'transparent',
+                  border: '2px solid #AD46FF',
+                  borderRadius: '10px',
+                  color: '#FFFFFF',
+                  fontSize: '20px',
+                  textAlign: 'center',
+                  outline: 'none',
+                  fontFamily: 'Source Han Sans CN, sans-serif',
+                }}
+              />
+              <span
+                style={{
+                  fontFamily: 'Source Han Sans CN, sans-serif',
+                  fontSize: '20px',
+                  color: '#FFFFFF',
+                }}
+              >
+                px
+              </span>
+            </div>
+
+            {/* 预计高度展示行 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <span
+                style={{
+                  fontFamily: 'Source Han Sans CN, sans-serif',
+                  fontSize: '20px',
+                  color: '#FFFFFF',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                预计高度：
+              </span>
+              <span
+                style={{
+                  width: '220px',
+                  height: '52px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: '2px solid #444',
+                  borderRadius: '10px',
+                  fontFamily: 'Source Han Sans CN, sans-serif',
+                  fontSize: '20px',
+                  color: '#929292',
+                }}
+              >
+                {(() => {
+                  const w = parseInt(widthInput, 10);
+                  if (isNaN(w) || w < 100) return '—';
+                  return Math.round(w * generateConfig.video.defaultHeight / generateConfig.video.defaultWidth);
+                })()}
+              </span>
+              <span
+                style={{
+                  fontFamily: 'Source Han Sans CN, sans-serif',
+                  fontSize: '20px',
+                  color: '#FFFFFF',
+                }}
+              >
+                px
+              </span>
+            </div>
+
+            {/* 确认按钮 */}
+            <button
+              onClick={() => {
+                const w = Math.min(2048, Math.max(100, parseInt(widthInput, 10) || 100));
+                setWidthInput(String(w));
+                setGenerationWidth(w);
+                setShowWidthModal(false);
+                handleGenerate(w);
+              }}
+              style={{
+                width: '160px',
+                height: '52px',
+                borderRadius: '26px',
+                background: 'linear-gradient(90deg, #AD46FF 0%, #F6339A 100%)',
+                border: 'none',
+                cursor: 'pointer',
+                fontFamily: 'Source Han Sans CN, sans-serif',
+                fontSize: '22px',
+                fontWeight: 'bold',
+                color: '#FFFFFF',
+              }}
+            >
+              确认
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 错误弹窗 */}
       {errorMessage && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70">
@@ -1063,7 +1214,11 @@ function StylePageContent() {
           <div className="flex justify-end">
             {/* 生成按钮 */}
             <button
-              onClick={handleGenerate}
+              onClick={() => {
+                if (!selectedStyle || isGenerating) return;
+                setWidthInput(String(generationWidth));
+                setShowWidthModal(true);
+              }}
               disabled={!selectedStyle || isGenerating}
               className="relative group disabled:opacity-50 disabled:cursor-not-allowed"
             >

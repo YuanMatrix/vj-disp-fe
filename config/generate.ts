@@ -7,8 +7,8 @@ export const generateConfig = {
   // 视频输出尺寸配置
   video: {
     maxSize: 1024,          // 视频最长边（px）
-    defaultWidth: 1024,     // 默认宽度
-    defaultHeight: 1024,    // 默认高度
+    defaultWidth: 960,     // 默认宽度
+    defaultHeight: 600,    // 默认高度
     fps: 16,                // 帧率
   },
   
